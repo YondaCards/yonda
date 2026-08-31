@@ -79,32 +79,22 @@ instead of manual copy-paste into the browser editor.
 - [x] **Step 7: Retire the stale local copy** — deleted the old `AppScripts/`
   folder, renamed `AppScripts-live/` to `AppScripts/`.
 
-- [ ] **Step 8: git init and .gitignore**
+- [x] **Step 8: git init and .gitignore** — `git init` run in `Yonda/`,
+  default branch renamed to `main` (brand-new solo-use repo, no
+  collaborators — see ledger ruling on working directly on `main`).
+  `.gitignore` created with `node_modules/` and `.clasprc.json`.
 
-```bash
-cd "C:\Users\shuxrat.o\Documents\Claude Code\Yonda"
-git init
-```
+- [x] **Step 9: Verify clasp sees the project** — `.clasp.json` landed at
+  `Yonda/.clasp.json` (repo root, not inside `AppScripts/` — corrected
+  above) with `rootDir` initially left pointing at the pre-rename
+  `AppScripts-live`; fixed to `AppScripts`. `clasp show-file-status`
+  confirmed all 5 tracked files resolve correctly under the fixed rootDir.
+  (Substituted for the plan's original `clasp open` check — no interactive
+  browser login available in this environment; `show-file-status` is an
+  equally valid non-interactive confirmation that clasp is bound to the
+  right project.)
 
-Create `.gitignore`:
-```
-node_modules/
-.clasprc.json
-```
-
-- [ ] **Step 9: Verify clasp push/pull round-trip**
-
-Run: `cd AppScripts && clasp open`
-Expected: opens the correct Apps Script project in the browser (user confirms
-it's the right one — same project they use for Yonda Cards).
-
-- [ ] **Step 10: Commit the baseline**
-
-```bash
-cd "C:\Users\shuxrat.o\Documents\Claude Code\Yonda"
-git add AppScripts docs .gitignore
-git commit -m "chore: baseline the live Apps Script project under git + clasp"
-```
+- [x] **Step 10: Commit the baseline** — committed as `40c55a6`.
 
 ---
 
@@ -154,8 +144,8 @@ values exist outside Script Properties.
 
 In `AppScripts/Уведомления через ТГ-бот.js`, replace:
 ```javascript
-const TG_TOKEN   = "8719353919:AAG4HnykiCM1cTY4IRAyTCSqPSFHoNYrzZI";
-const TG_CHAT_ID = "-1003117860581";
+const TG_TOKEN   = "<the literal token value currently in this file — do not re-type it in any doc, copy from the live source instead>";
+const TG_CHAT_ID = "<the literal chat id currently in this file — same caution>";
 ```
 with:
 ```javascript
@@ -212,11 +202,13 @@ material write-off.
 
 - [ ] **Step 1: Confirm the bug still reproduces on the live sheet**
 
-⚠️ MANUAL: in "Реестр товаров", find a Товар that has at least one row for it
-in "Справочники" columns N/O/P (BOM: product/material/qty-per-unit — check
-column N for the product name). In a new blank row, set Товар to that
-product, Количество to 1, and set column F ("Тип") to "Производство".
-Expected (bug present): nothing happens — no alert, no new rows in
+⚠️ MANUAL: use Товар = "О маме" — confirmed via "Справочники" columns
+M:P (Спецификация table) to have an 11-material BOM, all currently in
+stock well above what one unit needs (e.g. XEROX Бумага needs 15, has 525;
+UV Обложка О маме needs 1, has 6 — the tightest margin of the 11). In
+"Реестр товаров", add a new blank row: Товар = "О маме", Количество = 1,
+then set column F ("Тип") to "Производство".
+Expected (bug present): nothing happens — no alert, no new rows appended to
 "Реестр материалов".
 
 - [ ] **Step 2: Apply the fix**
@@ -259,15 +251,19 @@ cd AppScripts && clasp push
 
 - [ ] **Step 4: Re-run the same manual scenario from Step 1**
 
-Repeat Step 1's action (new row, same product, Количество 1, column F set to
-"Производство").
-Expected now: either
-(a) an alert listing insufficient materials (if the product's BOM materials
-don't have enough stock — pick a different product/qty if this happens and
-retry), or
-(b) new rows appended to "Реестр материалов" with Тип="Списание", one per
-BOM component, Примечание starting with "Производство: ", and the
-corresponding "Склад материалов" остаток decreased by the expected amount.
+Repeat Step 1's action (new row, Товар = "О маме", Количество 1, column F
+set to "Производство").
+Expected now: 11 new rows appended to "Реестр материалов", one per BOM
+component (XEROX Бумага 15, Экобумага 5, ПВХ 1, UV Обложка О маме 1,
+Уголки для фото 0.3333333333, NFC тег 2, Конверты А4 1, Бумага самоклейка
+0.25, Конверт стандартный 1, Пакет крафт большой 1, Пружина 11.1мм 0.25),
+each with Тип="Списание" and Примечание starting with "Производство: О маме
+× 1". The corresponding "Склад материалов" остаток for each of those 11
+materials decreases by the matching amount. If instead an insufficient-stock
+alert appears, stock levels have moved since this plan was written — note
+which material and by how much, and treat it as informational, not a fix
+failure (re-run with a smaller qty or a different well-stocked product to
+still confirm the trigger fires).
 
 - [ ] **Step 5: Clean up the test row**
 
