@@ -1,5 +1,5 @@
-const TG_TOKEN   = "8719353919:AAG4HnykiCM1cTY4IRAyTCSqPSFHoNYrzZI";
-const TG_CHAT_ID = "-1003117860581";
+const TG_TOKEN   = PropertiesService.getScriptProperties().getProperty('TG_TOKEN');
+const TG_CHAT_ID = PropertiesService.getScriptProperties().getProperty('TG_CHAT_ID');
 
 const SHEET_FORM        = "Ответы на форму (1)";
 const SHEET_OPERATIONS  = "Операции";
