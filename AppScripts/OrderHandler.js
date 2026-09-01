@@ -122,6 +122,10 @@ function sendDeliveryReminder(e) {
 // ОТПРАВКА С INLINE КНОПКОЙ
 // ──────────────────────────────────────────────────────────────
 function sendTelegramWithButton(text, buttonText, buttonUrl) {
+  if (!TG_TOKEN || !TG_CHAT_ID) {
+    Logger.log('❌ TG_TOKEN/TG_CHAT_ID не заданы в Script Properties этого проекта');
+    return;
+  }
   try {
     UrlFetchApp.fetch("https://api.telegram.org/bot" + TG_TOKEN + "/sendMessage", {
       method: "post",

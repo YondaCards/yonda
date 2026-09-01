@@ -286,6 +286,10 @@ function getPriceByProduct(productName) {
 }
 
 function sendTelegram(text) {
+  if (!TG_TOKEN || !TG_CHAT_ID) {
+    Logger.log('❌ TG_TOKEN/TG_CHAT_ID не заданы в Script Properties этого проекта');
+    return;
+  }
   try {
     UrlFetchApp.fetch("https://api.telegram.org/bot" + TG_TOKEN + "/sendMessage", {
       method: "post",
@@ -380,6 +384,10 @@ function sendBalance(chatId) {
 
 // Отправка в конкретный чат (не в общий TG_CHAT_ID)
 function sendTelegramTo(chatId, text) {
+  if (!TG_TOKEN || !TG_CHAT_ID) {
+    Logger.log('❌ TG_TOKEN/TG_CHAT_ID не заданы в Script Properties этого проекта');
+    return;
+  }
   try {
     UrlFetchApp.fetch("https://api.telegram.org/bot" + TG_TOKEN + "/sendMessage", {
       method: "post",

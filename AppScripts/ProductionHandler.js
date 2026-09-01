@@ -2,6 +2,8 @@ const SHEET_GOODS_REGISTRY     = 'Реестр товаров';
 const SHEET_MATERIALS_REGISTRY = 'Реестр материалов';
 const SHEET_MATERIALS_STOCK = 'Склад материалов';
 
+const GOODS_COL = { ID: 1, DATE: 2, REC_TYPE: 3, PRODUCT: 4, QTY: 5, TYPE: 6, FROM: 7, TO: 8 };
+
 // ──────────────────────────────────────────────────────────────
 // ТРИГГЕР — форма (onFormSubmit)
 // ──────────────────────────────────────────────────────────────
@@ -28,7 +30,7 @@ function onEditProduction(e) {
 
   if (sheet.getName() !== SHEET_GOODS_REGISTRY) return;
 
-  const TYPE_COLUMN = 6; // F = "Тип" (not C = "Тип записи" — see Foundation plan Task 3)
+  const TYPE_COLUMN = GOODS_COL.TYPE; // F = "Тип" (not C = "Тип записи" — see Foundation plan Task 3)
   const col = e.range.getColumn();
   const row = e.range.getRow();
 
@@ -37,23 +39,23 @@ function onEditProduction(e) {
   if (e.value !== 'Производство') return;
 
   // Читаем всю строку
-  const rowData   = sheet.getRange(row, 1, 1, 8).getValues()[0];
-  const timestamp = rowData[1] || new Date();  // B = Дата
-  const product   = rowData[3];                 // D = Товар
-  const qty       = Number(rowData[4]) || 0;    // E = Количество
+  const rowData   = sheet.getRange(row, 1, 1, GOODS_COL.TO).getValues()[0];
+  const timestamp = rowData[GOODS_COL.DATE - 1] || new Date();  // B = Дата
+  const product   = rowData[GOODS_COL.PRODUCT - 1];             // D = Товар
+  const qty       = Number(rowData[GOODS_COL.QTY - 1]) || 0;    // E = Количество
 
   if (!product || qty === 0) {
     SpreadsheetApp.getUi().alert('⚠️ Заполни Товар и Количество перед тем как ставить тип Производство');
     return;
   }
 
-  writeOffMaterials(timestamp, product, qty);
+  writeOffMaterials(timestamp, product, qty, rowData[GOODS_COL.ID - 1]);
 }
 
 // ──────────────────────────────────────────────────────────────
 // ОБЩАЯ ЛОГИКА СПИСАНИЯ
 // ──────────────────────────────────────────────────────────────
-function writeOffMaterials(timestamp, product, qty) {
+function writeOffMaterials(timestamp, product, qty, sourceRowId) {
   const ss       = SpreadsheetApp.getActiveSpreadsheet();
   const refSheet = ss.getSheetByName(SHEET_REFERENCES);
   const lastRow  = refSheet.getLastRow();
@@ -104,6 +106,8 @@ function writeOffMaterials(timestamp, product, qty) {
   // Всё в порядке — пишем списания
   const matSheet = ss.getSheetByName(SHEET_MATERIALS_REGISTRY);
 
+  const note = 'Производство: ' + product + ' × ' + qty + (sourceRowId ? ' [#' + sourceRowId + ']' : '');
+
   specs.forEach(spec => {
     const material    = spec[2];
     const specQty     = Number(spec[3]) || 0;
@@ -114,7 +118,7 @@ function writeOffMaterials(timestamp, product, qty) {
       material,
       'Списание',
       writeOffQty,
-      'Производство: ' + product + ' × ' + qty
+      note
     ]);
   });
 
