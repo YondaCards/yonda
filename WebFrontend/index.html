@@ -4,8 +4,26 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Yonda</title>
+<link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <p>Yonda — скоро здесь будет инструмент инвентаризации.</p>
+  <div id="app"></div>
+  <script src="auth.js"></script>
+  <script>
+    function renderHome() {
+      document.getElementById('app').innerHTML =
+        '<div class="screen" style="padding:28px 20px 24px;gap:28px;">' +
+          '<div><div style="font-size:12.5px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:oklch(0.55 0.01 250);">Yonda</div>' +
+          '<div style="font-size:23px;font-weight:800;">Инструменты</div></div>' +
+          '<a class="card-btn" href="inventory.html"><div style="flex:1;"><div style="font-size:16px;font-weight:700;">Инвентаризация</div>' +
+          '<div style="font-size:13px;color:oklch(0.55 0.01 250);">Сверить фактические остатки</div></div></a>' +
+        '</div>';
+    }
+    function renderSignedOut() {
+      document.getElementById('app').innerHTML = '<div class="signin-wrap"><div style="font-size:16px;font-weight:700;">Войдите, чтобы продолжить</div><div id="signin-button"></div></div>';
+    }
+    renderSignedOut();
+  </script>
+  <script src="https://accounts.google.com/gsi/client" async onload="initAuth(renderHome)"></script>
 </body>
 </html>

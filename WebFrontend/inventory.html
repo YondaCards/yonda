@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Yonda — Инвентаризация</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app"></div>
+  <script src="auth.js"></script>
+  <script src="api.js"></script>
+  <script>
+    var state = { screen: 'type', type: null, location: null, locations: null, items: null, facts: {}, customItems: [], changes: [], written: 0 };
+
+    function render() {
+      var app = document.getElementById('app');
+      if (state.screen === 'type') { app.innerHTML = renderType(); bindType(); return; }
+      if (state.screen === 'location') { app.innerHTML = renderLocation(); bindLocation(); return; }
+      if (state.screen === 'counting') { app.innerHTML = renderCounting(); bindCounting(); return; }
+      if (state.screen === 'confirm') { app.innerHTML = renderConfirm(); bindConfirm(); return; }
+    }
+
+    function renderType() {
+      return '' +
+        '<div class="screen" style="padding:28px 20px 24px;gap:28px;">' +
+          '<div><div style="font-size:12.5px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:oklch(0.55 0.01 250);">Yonda · Инвентаризация</div>' +
+          '<div style="font-size:23px;font-weight:800;">Что считаем?</div></div>' +
+          '<div style="display:flex;flex-direction:column;gap:12px;">' +
+            '<button class="card-btn" id="pick-materials"><div style="flex:1;"><div style="font-size:16px;font-weight:700;">Материалы</div>' +
+            '<div style="font-size:13px;color:oklch(0.55 0.01 250);">Склад материалов</div></div></button>' +
+            '<button class="card-btn" id="pick-products"><div style="flex:1;"><div style="font-size:16px;font-weight:700;">Товары</div>' +
+            '<div style="font-size:13px;color:oklch(0.55 0.01 250);">Основной склад и точки продаж</div></div></button>' +
+          '</div>' +
+        '</div>';
+    }
+
+    function bindType() {
+      document.getElementById('pick-materials').onclick = function () {
+        state.type = 'materials'; state.facts = {}; state.customItems = [];
+        state.screen = 'counting'; state.items = null; render();
+        apiGet('getMaterialsSnapshot', {}).then(function (items) { state.items = items; render(); }).catch(onError);
+      };
+      document.getElementById('pick-products').onclick = function () {
+        state.type = 'products'; state.facts = {}; state.customItems = [];
+        state.screen = 'location'; state.locations = null; render();
+        apiGet('getLocations', {}).then(function (locations) { state.locations = locations; render(); }).catch(onError);
+      };
+    }
+
+    function renderLocation() {
+      if (state.locations === null) {
+        return '<div class="screen"><div class="header"><button class="back-btn" id="back-to-type">' + backIcon() + '</button><div class="title">Выбрать точку</div></div><div class="spinner">Загрузка…</div></div>';
+      }
+      var rows = '';
+      state.locations.forEach(function (loc) {
+        rows += '<button class="card-btn" data-loc="' + escapeAttr(loc) + '" style="justify-content:space-between;margin-bottom:10px;"><div style="font-size:15px;font-weight:600;">' + escapeHtml(loc) + '</div></button>';
+      });
+      return '' +
+        '<div class="screen">' +
+          '<div class="header"><button class="back-btn" id="back-to-type">' + backIcon() + '</button><div class="title">Выбрать точку</div></div>' +
+          '<div class="list">' + rows + '</div>' +
+        '</div>';
+    }
+
+    function bindLocation() {
+      document.getElementById('back-to-type').onclick = function () { state.screen = 'type'; state.type = null; render(); };
+      if (state.locations === null) return;
+      document.querySelectorAll('[data-loc]').forEach(function (btn) {
+        btn.onclick = function () {
+          state.location = btn.getAttribute('data-loc');
+          state.facts = {}; state.customItems = [];
+          state.screen = 'counting'; state.items = null; render();
+          apiGet('getProductsSnapshot', { location: state.location }).then(function (items) { state.items = items; render(); }).catch(onError);
+        };
+      });
+    }
+
+    function renderCounting() {
+      if (state.items === null) {
+        return '<div class="screen"><div class="header"><button class="back-btn" id="back-from-counting">' + backIcon() + '</button><div><div class="title">' + (state.type === 'materials' ? 'Материалы' : 'Товары') + '</div></div></div><div class="spinner">Загрузка…</div></div>';
+      }
+      var rows = '';
+      state.items.forEach(function (item) {
+        var fact = state.facts[item.name] === undefined ? '' : state.facts[item.name];
+        var stockLabel = 'Сейчас: ' + item.current + (item.unit ? (' ' + item.unit) : '');
+        rows += '<div class="row"><div style="flex:1;"><div class="row-name">' + escapeHtml(item.name) + '</div>' +
+          '<div class="row-stock">' + stockLabel + '</div></div>' +
+          '<input class="fact-input" type="number" inputmode="decimal" placeholder="—" data-fact="' + escapeAttr(item.name) + '" value="' + escapeAttr(fact) + '"></div>';
+      });
+      state.customItems.forEach(function (ci) {
+        rows += '<div class="row"><input class="name-input" type="text" placeholder="Название позиции" data-custom-name="' + ci.id + '" value="' + escapeAttr(ci.name) + '">' +
+          '<input class="fact-input" style="width:64px;" type="number" inputmode="decimal" placeholder="—" data-custom-fact="' + ci.id + '" value="' + escapeAttr(ci.fact) + '">' +
+          '<button class="remove-btn" data-remove-custom="' + ci.id + '">' + removeIcon() + '</button></div>';
+      });
+      var subtitle = state.type === 'materials' ? 'Основной склад' : state.location;
+      return '' +
+        '<div class="screen">' +
+          '<div class="header"><button class="back-btn" id="back-from-counting">' + backIcon() + '</button>' +
+          '<div><div class="title">' + (state.type === 'materials' ? 'Материалы' : 'Товары') + '</div><div class="subtitle">' + escapeHtml(subtitle) + '</div></div></div>' +
+          '<div class="list">' + rows + '<button class="add-row-btn" id="add-custom">' + plusIcon() + ' Добавить позицию</button></div>' +
+          '<div class="footer"><button class="primary-btn" id="save-counts">Сохранить</button></div>' +
+        '</div>';
+    }
+
+    function bindCounting() {
+      var backBtn = document.getElementById('back-from-counting');
+      if (backBtn) backBtn.onclick = function () {
+        if (state.type === 'products') { state.screen = 'location'; }
+        else { state.screen = 'type'; state.type = null; }
+        render();
+      };
+      if (state.items === null) return;
+      document.querySelectorAll('[data-fact]').forEach(function (el) {
+        el.onchange = function () { state.facts[el.getAttribute('data-fact')] = el.value; };
+      });
+      document.querySelectorAll('[data-custom-name]').forEach(function (el) {
+        el.onchange = function () {
+          var id = el.getAttribute('data-custom-name');
+          state.customItems = state.customItems.map(function (c) { return c.id === id ? Object.assign({}, c, { name: el.value }) : c; });
+        };
+      });
+      document.querySelectorAll('[data-custom-fact]').forEach(function (el) {
+        el.onchange = function () {
+          var id = el.getAttribute('data-custom-fact');
+          state.customItems = state.customItems.map(function (c) { return c.id === id ? Object.assign({}, c, { fact: el.value }) : c; });
+        };
+      });
+      document.querySelectorAll('[data-remove-custom]').forEach(function (el) {
+        el.onclick = function () {
+          var id = el.getAttribute('data-remove-custom');
+          state.customItems = state.customItems.filter(function (c) { return c.id !== id; });
+          render();
+        };
+      });
+      document.getElementById('add-custom').onclick = function () {
+        state.customItems.push({ id: 'c' + Date.now() + Math.floor(Math.random() * 1000), name: '', fact: '' });
+        render();
+      };
+      document.getElementById('save-counts').onclick = onSave;
+    }
+
+    function onSave() {
+      var counts = [];
+      state.items.forEach(function (item) {
+        var raw = state.facts[item.name];
+        if (raw === undefined || raw === '') return;
+        var factNum = Number(raw);
+        if (isNaN(factNum)) return;
+        var delta = factNum - item.current;
+        if (delta === 0) return;
+        counts.push({ name: item.name, fact: raw });
+      });
+      var newItems = state.customItems
+        .filter(function (c) { return c.name && c.fact !== '' && !isNaN(Number(c.fact)) && Number(c.fact) !== 0; })
+        .map(function (c) { return { name: c.name, fact: c.fact }; });
+
+      state.changes = counts.map(function (c) {
+        var item = state.items.filter(function (i) { return i.name === c.name; })[0];
+        var delta = Number(c.fact) - item.current;
+        var unit = item.unit ? (' ' + item.unit) : '';
+        return { name: c.name, label: (delta > 0 ? '+' : '') + delta + unit };
+      }).concat(newItems.map(function (ni) {
+        return { name: ni.name, label: '+' + ni.fact + ' (новое)' };
+      }));
+
+      var btn = document.getElementById('save-counts');
+      btn.setAttribute('disabled', 'true');
+      btn.textContent = 'Сохраняем…';
+      apiPost('submitInventory', { kind: state.type, location: state.location, counts: counts, newItems: newItems })
+        .then(function (result) {
+          state.written = result && typeof result.written === 'number' ? result.written : state.changes.length;
+          state.screen = 'confirm'; render();
+        })
+        .catch(function (err) {
+          btn.removeAttribute('disabled'); btn.textContent = 'Сохранить';
+          onError(err);
+        });
+    }
+
+    function renderConfirm() {
+      var rows = '';
+      state.changes.forEach(function (chg) {
+        rows += '<div class="change-row"><div style="flex:1;font-size:14px;font-weight:600;">' + escapeHtml(chg.name) + '</div>' +
+          '<div style="font-size:14px;font-weight:800;color:oklch(0.45 0.14 220);">' + escapeHtml(chg.label) + '</div></div>';
+      });
+      var summary = state.written === 0 ? 'Расхождений не найдено' : 'Обновлено позиций: ' + state.written;
+      return '' +
+        '<div class="screen">' +
+          '<div style="display:flex;flex-direction:column;align-items:center;gap:10px;padding:40px 20px 22px;">' +
+            '<div style="width:52px;height:52px;border-radius:50%;background:oklch(0.93 0.05 145);display:flex;align-items:center;justify-content:center;">' + checkIcon() + '</div>' +
+            '<div style="font-size:18px;font-weight:800;">Инвентаризация сохранена</div>' +
+            '<div style="font-size:13px;color:oklch(0.55 0.01 250);text-align:center;">' + summary + '</div>' +
+          '</div>' +
+          '<div class="list" style="gap:8px;">' + rows + '</div>' +
+          '<div class="footer" style="border-top:none;"><button class="dark-btn" id="finish">Готово</button></div>' +
+        '</div>';
+    }
+
+    function bindConfirm() {
+      document.getElementById('finish').onclick = function () {
+        state = { screen: 'type', type: null, location: null, locations: null, items: null, facts: {}, customItems: [], changes: [], written: 0 };
+        render();
+      };
+    }
+
+    function onError(err) {
+      if (isTokenAuthError(err)) { signOut(); return; }
+      alert('Ошибка: ' + (err && err.message ? err.message : err));
+    }
+
+    function escapeHtml(s) { return String(s).replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); }
+    function escapeAttr(s) { return escapeHtml(s).replace(/"/g, '&quot;'); }
+    function backIcon() { return '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6l-6 6 6 6"></path></svg>'; }
+    function plusIcon() { return '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"></path></svg>'; }
+    function removeIcon() { return '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="oklch(0.55 0.18 25)" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"></path></svg>'; }
+    function checkIcon() { return '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="oklch(0.4 0.14 145)" stroke-width="2.4"><path d="M5 13l4 4L19 7"></path></svg>'; }
+
+    function renderSignedOut() {
+      document.getElementById('app').innerHTML = '<div class="signin-wrap"><div style="font-size:16px;font-weight:700;">Войдите, чтобы продолжить</div><div id="signin-button"></div></div>';
+    }
+
+    renderSignedOut();
+  </script>
+  <script src="https://accounts.google.com/gsi/client" async onload="initAuth(render)"></script>
+</body>
+</html>
