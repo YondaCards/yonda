@@ -274,7 +274,7 @@ Fully self-contained and testable — no live verification needed for this task.
 
 ---
 
-### Task 3: Private GitHub repo + Pages publishing
+### Task 3: GitHub repo + Pages publishing
 
 **Files:**
 - Create: `WebFrontend/index.html` (trivial placeholder — Task 5 replaces its content)
@@ -283,7 +283,7 @@ Fully self-contained and testable — no live verification needed for this task.
 **Interfaces:**
 - Produces: a live GitHub Pages URL (form `https://<username>.github.io/<repo>/`), recorded in the SDD ledger — Task 4 needs it as the OAuth "Authorized JavaScript origin"; Task 5 needs it to give the owner the real link.
 
-This task is almost entirely a live collaboration between the controller and the owner — an implementer subagent cannot create a GitHub repo, change its visibility, or upgrade a billing plan. Dispatch this task's file-creation half to an implementer, but perform the account/repo/Pages steps directly with the owner, not through a subagent.
+This task is almost entirely a live collaboration between the controller and the owner — an implementer subagent cannot create a GitHub repo or enable Pages on it. Dispatch this task's file-creation half to an implementer, but perform the account/repo/Pages steps directly with the owner, not through a subagent.
 
 - [ ] **Step 1: Create `WebFrontend/index.html`**
 
@@ -940,12 +940,28 @@ Script project. To apply the same changes to the real production system:
    `@BotFather`, use `/token` (or `/revoke` then `/token`) on the
    production bot, get the new token, and update it in the production
    Apps Script project's Script Properties (the same place the old token
-   already lives, per Plan 1's fix) — never in code. Confirm the bot still
-   works with the new token before continuing.
+   already lives, per Plan 1's fix) — never in code. **This is the same
+   live token this sandbox project's `Уведомления через ТГ-бот.js` also
+   reads from its own Script Properties** — rotating only production's
+   copy silently breaks the sandbox's Telegram notifications, so either
+   update the sandbox project's `TG_TOKEN` Script Property to the same new
+   value too, or explicitly accept with the owner that sandbox
+   notifications will stop. Confirm the bot still works with the new token
+   before continuing.
 2. **Copy the code**, using `git show` on this plan's commits as the
    reference: `AppScripts/Api.gs`, `AppScripts/Lib/TokenAuth.js`,
    `AppScripts/WebApp.gs`'s `doGet`/`doPost` changes, and the entire
-   `WebFrontend/` folder.
+   `WebFrontend/` folder. **Also replicate the `doPost` → `handleTelegramWebhook_`
+   rename and the router discriminator fix** (Task 1, Step 2 in this plan —
+   the router requires `body.update_id` before treating a request as a
+   Telegram webhook, not just the absence of `body.action`) in production's
+   own `AppScripts/Уведомления через ТГ-бот.js` and `WebApp.gs`. Production
+   has its OWN pre-existing Telegram `doPost`, and skipping this step would
+   silently reproduce this plan's own Task 1 incident (a naming collision
+   that made the API's POST path completely unreachable) in production.
+   **Before touching anything, grep production's Apps Script project for an
+   existing `doPost` declaration first** — same warning as Task 1's Step 2
+   carries — so the rename target is confirmed before it's overwritten.
 3. **Create a second OAuth Client ID** in Google Cloud Console (same steps
    as Task 4, Step 1) — a fresh one scoped to production's GitHub Pages
    origin, with both production `ALLOWED_EMAILS` addresses as test users
@@ -964,6 +980,11 @@ Script project. To apply the same changes to the real production system:
    `OAUTH_CLIENT_ID`** to production's values before pushing.
 7. **Verify**: repeat Task 6, Step 2 against production, with both the
    owner and the partner.
+
+Note: because the ID token travels as a GET query parameter (a deliberate
+choice — see the spec's CORS section for why), it ends up in Google's
+server-side request logs. This is accepted as low-risk for a two-person
+internal tool, but worth knowing.
 ```
 
 - [ ] **Step 4: Commit**
@@ -989,12 +1010,28 @@ Script project. To apply the same changes to the real production system:
    `@BotFather`, use `/token` (or `/revoke` then `/token`) on the
    production bot, get the new token, and update it in the production
    Apps Script project's Script Properties (the same place the old token
-   already lives, per Plan 1's fix) — never in code. Confirm the bot still
-   works with the new token before continuing.
+   already lives, per Plan 1's fix) — never in code. **This is the same
+   live token this sandbox project's `Уведомления через ТГ-бот.js` also
+   reads from its own Script Properties** — rotating only production's
+   copy silently breaks the sandbox's Telegram notifications, so either
+   update the sandbox project's `TG_TOKEN` Script Property to the same new
+   value too, or explicitly accept with the owner that sandbox
+   notifications will stop. Confirm the bot still works with the new token
+   before continuing.
 2. **Copy the code**, using `git show` on this plan's commits as the
    reference: `AppScripts/Api.gs`, `AppScripts/Lib/TokenAuth.js`,
    `AppScripts/WebApp.gs`'s `doGet`/`doPost` changes, and the entire
-   `WebFrontend/` folder.
+   `WebFrontend/` folder. **Also replicate the `doPost` → `handleTelegramWebhook_`
+   rename and the router discriminator fix** (Task 1, Step 2 in this plan —
+   the router requires `body.update_id` before treating a request as a
+   Telegram webhook, not just the absence of `body.action`) in production's
+   own `AppScripts/Уведомления через ТГ-бот.js` and `WebApp.gs`. Production
+   has its OWN pre-existing Telegram `doPost`, and skipping this step would
+   silently reproduce this plan's own Task 1 incident (a naming collision
+   that made the API's POST path completely unreachable) in production.
+   **Before touching anything, grep production's Apps Script project for an
+   existing `doPost` declaration first** — same warning as Task 1's Step 2
+   carries — so the rename target is confirmed before it's overwritten.
 3. **Create a second OAuth Client ID** in Google Cloud Console (same steps
    as Task 4, Step 1) — a fresh one scoped to production's GitHub Pages
    origin, with both production `ALLOWED_EMAILS` addresses as test users
@@ -1013,3 +1050,8 @@ Script project. To apply the same changes to the real production system:
    `OAUTH_CLIENT_ID`** to production's values before pushing.
 7. **Verify**: repeat Task 6, Step 2 against production, with both the
    owner and the partner.
+
+Note: because the ID token travels as a GET query parameter (a deliberate
+choice — see the spec's CORS section for why), it ends up in Google's
+server-side request logs. This is accepted as low-risk for a two-person
+internal tool, but worth knowing.
