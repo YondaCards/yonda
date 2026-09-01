@@ -65,17 +65,23 @@ authorization via the ID token, so Apps Script's own access gate is set to
 
 ## Repo & hosting
 
-Everything stays in this one repo (`Yonda/`). Free GitHub Pages requires a
-public repository — but this repo's git history still contains the
-Telegram bot token from before Plan 1's fix (removed from the current
-files, moved to `PropertiesService`, but still readable in old commits via
-`git log -p`). The owner chose not to rotate that token or rewrite history
-back when the repo was local-only; going public changes that calculus, so
-this was re-raised explicitly. Decision: **the repo stays private**, on a
-paid GitHub plan (~$4/month) that supports GitHub Pages on private repos.
-This also settles the earlier question about `docs/superpowers/` plans and
-specs (Sheet URL, both `ALLOWED_EMAILS` addresses) becoming publicly
-readable — with a private repo, they don't.
+Everything stays in this one repo (`Yonda/`), on GitHub's free tier —
+GitHub Pages requires a public repository at that tier. This repo's git
+history still contains the Telegram bot token from before Plan 1's fix
+(removed from the current files, moved to `PropertiesService`, but still
+readable in old commits via `git log -p`); going public exposes it. This
+was raised explicitly with the owner twice — once when public was first
+proposed (leading to an interim decision to go private instead), and again
+when the question came up a second time mid-implementation. Final
+decision: **leave the token as-is and go public anyway** — it's the live
+token for the real production bot, the owner doesn't want to touch it
+mid-migration, and it will be rotated as part of this plan's Production
+Hand-Off once the real production project is migrated too. This also means
+`docs/superpowers/` plans and specs (Sheet URL, both `ALLOWED_EMAILS`
+addresses) become publicly readable — accepted for the same reason as the
+original design: the Sheet URL alone grants no access (Google's own
+sharing permissions still gate the Sheet), and the email addresses aren't
+secret.
 
 The new static frontend lives in a new `WebFrontend/` folder at the repo
 root (not `/docs` — that's already the plans/specs folder). Publishing uses

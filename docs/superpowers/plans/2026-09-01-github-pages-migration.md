@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Re-host the Инвентаризация tool's frontend as a static page on GitHub Pages (private repo), talking to the existing Apps Script backend as a JSON API, to route around a phone-specific bug where Apps Script's `HtmlService` iframe never executes scripts.
+**Goal:** Re-host the Инвентаризация tool's frontend as a static page on GitHub Pages (public repo, free tier), talking to the existing Apps Script backend as a JSON API, to route around a phone-specific bug where Apps Script's `HtmlService` iframe never executes scripts.
 
 **Architecture:** `AppScripts/WebApp.gs`'s `doGet`/`doPost` grow a second branch — a JSON API, gated by a Google ID token verified against the same `ALLOWED_EMAILS` list — alongside the existing, untouched HTML-serving branch. A new `WebFrontend/` folder holds a static copy of the tool's UI that calls this API via `fetch` and signs users in with Google Identity Services. GitHub Actions publishes `WebFrontend/` to GitHub Pages on every push to `main`.
 
@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Repo stays **private** on a paid GitHub plan (Pages needs that for a private repo) — the Telegram bot token is still readable in old git commits, so this repo must never go public. Confirm this explicitly with the owner before any push in Task 3.
+- Repo is **public**, on GitHub's free tier (Pages requires this at the free tier). The Telegram bot token is still readable in old git commits — this was raised explicitly with the owner twice, and the owner's final decision is to leave the token as-is and rotate it later, as part of Task 6's Production Hand-Off, rather than delay this plan or pay for a private-repo plan. Do not rotate the token or rewrite git history as part of this plan — that's explicitly deferred.
 - `ALLOWED_EMAILS = ['shuhratorifjonov29@gmail.com', 'nurakvlnk@gmail.com']` (already in `AppScripts/WebApp.gs`) — the API reuses this exact array; do not duplicate or hardcode it elsewhere.
 - `.clasp.json`/`.claspignore` live at the repo root (`Yonda/`), not inside `AppScripts/` — `clasp push` runs from the repo root.
 - Dual Node/Apps-Script files in `AppScripts/Lib/` end with: `if (typeof module !== 'undefined' && module.exports) { module.exports = { ... }; }` — this is what lets `npm test` (`node --test "AppScripts/Lib/**/*.test.js"`) run them and lets Apps Script load them as plain global functions (the guard body never executes there).
@@ -338,14 +338,14 @@ Note: "Files committed locally. Repo has no remote yet — creating it, pushing,
 
 **Live setup (controller + owner, after this task's code review):**
 
-1. Confirm with the owner: this repo is going to a **paid** GitHub plan so Pages can serve a **private** repo (per Global Constraints — the Telegram token in git history rules out public). Get their explicit go-ahead before creating anything.
-2. Owner creates a new **private** repository on github.com (any name, e.g. `yonda-cards`) — empty, no README/`.gitignore`/license (this local repo already has history). Owner gives the controller the repo's URL.
+1. Confirm with the owner: this repo is going **public**, on GitHub's free tier — per Global Constraints, the owner's explicit, informed decision is to leave the Telegram bot token in git history as-is for now and rotate it later during Task 6's Production Hand-Off, rather than pay for a private-repo plan. Get their explicit go-ahead before creating anything (re-confirm, don't assume the ledger's record is enough).
+2. Owner creates a new **public** repository on github.com (any name, e.g. `yonda-cards`) — empty, no README/`.gitignore`/license (this local repo already has history). Owner gives the controller the repo's URL.
 3. Controller adds the remote and pushes:
    ```bash
    git remote add origin <repo-url>
    git push -u origin main
    ```
-4. Owner (billing changes need the account holder) upgrades to a paid plan that includes private-repo Pages, then goes to the repo's **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+4. Owner goes to the repo's **Settings → Pages → Build and deployment → Source: GitHub Actions** (no billing changes needed on the free tier for a public repo).
 5. Owner confirms in the **Actions** tab that the "Deploy WebFrontend to GitHub Pages" workflow ran successfully, then opens the URL shown in **Settings → Pages** and confirms the placeholder text loads.
 6. Record the live Pages URL in the SDD ledger.
 
@@ -913,26 +913,38 @@ Once Step 2 passes, append this section to the end of this plan file:
 This plan was built and verified against the sandbox Google Sheet/Apps
 Script project. To apply the same changes to the real production system:
 
-1. **Copy the code**, using `git show` on this plan's commits as the
+1. **Rotate the production Telegram bot token first, before anything else
+   below.** This sandbox repo's git history has carried the real
+   production bot's token in plaintext since before Plan 1 (this plan's
+   own repo went public with that token still in its history — the
+   owner's explicit, informed decision, made twice this session — on the
+   condition that it gets rotated here). In Telegram, message
+   `@BotFather`, use `/token` (or `/revoke` then `/token`) on the
+   production bot, get the new token, and update it in the production
+   Apps Script project's Script Properties (the same place the old token
+   already lives, per Plan 1's fix) — never in code. Confirm the bot still
+   works with the new token before continuing.
+2. **Copy the code**, using `git show` on this plan's commits as the
    reference: `AppScripts/Api.gs`, `AppScripts/Lib/TokenAuth.js`,
    `AppScripts/WebApp.gs`'s `doGet`/`doPost` changes, and the entire
    `WebFrontend/` folder.
-2. **Create a second OAuth Client ID** in Google Cloud Console (same steps
+3. **Create a second OAuth Client ID** in Google Cloud Console (same steps
    as Task 4, Step 1) — a fresh one scoped to production's GitHub Pages
    origin, with both production `ALLOWED_EMAILS` addresses as test users
    (confirm they match production's `WebApp.gs` — update if not).
-3. **Create a second private GitHub repo** for production (or reuse this
-   one if production and sandbox are meant to share a live site — decide
-   with the owner; the sandbox and production Apps Script projects have
-   different Script IDs, so they cannot share one exec URL regardless).
-   Enable Pages the same way as Task 3.
-4. **Create a new, separate Web App deployment** in the production Apps
+4. **Create a second GitHub repo** for production (or reuse this one if
+   production and sandbox are meant to share a live site — decide with the
+   owner; the sandbox and production Apps Script projects have different
+   Script IDs, so they cannot share one exec URL regardless). Public is
+   fine, same as this plan's repo, since Step 1 already rotated the token
+   this repo's history exposes. Enable Pages the same way as Task 3.
+5. **Create a new, separate Web App deployment** in the production Apps
    Script project for the API — same caution as always: don't touch
    whichever deployment already serves production's Telegram webhook or
    its existing HTML pages.
-5. **Update `WebFrontend/api.js`'s `API_BASE_URL`** and `auth.js`'s
+6. **Update `WebFrontend/api.js`'s `API_BASE_URL`** and `auth.js`'s
    `OAUTH_CLIENT_ID`** to production's values before pushing.
-6. **Verify**: repeat Task 6, Step 2 against production, with both the
+7. **Verify**: repeat Task 6, Step 2 against production, with both the
    owner and the partner.
 ```
 
