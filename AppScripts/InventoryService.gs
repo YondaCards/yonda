@@ -141,14 +141,43 @@ function submitProductsInventory_(ss, location, counts, newItems, dateStr) {
     }
     const factNum = Number(ni.fact);
     if (Number.isNaN(factNum) || factNum === 0) return;
-    const newRow = stockSheet.getLastRow() + 1;
-    stockSheet.getRange(newRow, 1).setValue(name); // A: Товар
-    const lastCol = stockSheet.getLastColumn();
-    stockSheet.getRange(2, 2, 1, lastCol - 1).copyTo(stockSheet.getRange(newRow, 2, 1, lastCol - 1)); // B..: formulas
+
+    // "Склад товаров" column A is not a plain list — A2 holds a single ARRAYFORMULA
+    // that spills the product list down from Справочники!A2:A (Справочник цен).
+    // Writing directly into a new row of column A here blocks that spill range and
+    // breaks the sheet's whole product list. Instead, append the new name to
+    // Справочники!A (Справочник цен) and let the ARRAYFORMULA extend on its own.
+    const referencesSheet = ss.getSheetByName(SHEET_REFERENCES); // declared in Уведомления через ТГ-бот.js -- reused, not redeclared
+    const priceListLastRow = findLastNonEmptyRow_(referencesSheet, 1); // column A of Справочник цен
+    const newRow = priceListLastRow + 1; // Справочники and Склад товаров are row-for-row aligned starting at row 2 (ARRAYFORMULA(IF(...))) -- no independent scan of Склад товаров needed, and scanning it is exactly what broke a trailing "Итого" totals row last time
+    referencesSheet.getRange(newRow, 1).setValue(name); // A: Название товара -- triggers Склад товаров's ARRAYFORMULA to extend
+    SpreadsheetApp.flush();
+
+    // Defensive check: confirm the array formula actually spilled the name where expected before writing anything else there.
+    const spilledName = stockSheet.getRange(newRow, 1).getValue();
+    if (spilledName !== name) {
+      throw new Error('Ожидал "' + name + '" в Склад товаров!A' + newRow + ' после добавления в Справочники, но нашёл "' + spilledName + '" -- проверь структуру листов вручную, ничего больше не менялось.');
+    }
+
+    const stockLastCol = stockSheet.getLastColumn();
+    const stockHeader = stockSheet.getRange(1, 1, 1, stockLastCol).getValues()[0];
+    const stockTotalColIndex = stockHeader.indexOf('Итого') + 1; // 1-based; 0 if absent
+    const stockLastLocationCol = stockTotalColIndex > 0 ? stockTotalColIndex - 1 : stockLastCol;
+    stockSheet.getRange(2, 2, 1, stockLastLocationCol - 1).copyTo(stockSheet.getRange(newRow, 2, 1, stockLastLocationCol - 1)); // B..: formulas, bounded before Итого
     const row = buildGoodsLedgerRow(factNum, location, dateStr);
     appendGoodsRow(name, row.quantity, row.type, row.from, row.to);
     written++;
   });
 
   return { written: written };
+}
+
+function findLastNonEmptyRow_(sheet, col) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 1) return 0;
+  const values = sheet.getRange(1, col, lastRow, 1).getValues();
+  for (let i = values.length - 1; i >= 0; i--) {
+    if (values[i][0] !== '' && values[i][0] !== null) return i + 1; // 1-based row
+  }
+  return 0;
 }
