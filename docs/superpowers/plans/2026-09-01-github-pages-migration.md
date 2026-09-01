@@ -16,7 +16,7 @@
 - `ALLOWED_EMAILS = ['shuhratorifjonov29@gmail.com', 'nurakvlnk@gmail.com']` (already in `AppScripts/WebApp.gs`) — the API reuses this exact array; do not duplicate or hardcode it elsewhere.
 - `.clasp.json`/`.claspignore` live at the repo root (`Yonda/`), not inside `AppScripts/` — `clasp push` runs from the repo root.
 - Dual Node/Apps-Script files in `AppScripts/Lib/` end with: `if (typeof module !== 'undefined' && module.exports) { module.exports = { ... }; }` — this is what lets `npm test` (`node --test "AppScripts/Lib/**/*.test.js"`) run them and lets Apps Script load them as plain global functions (the guard body never executes there).
-- New `.gs` files (Apps Script-only, not Node-testable) use `const`/`let`, matching `AppScripts/WebApp.gs`'s existing style.
+- New `.gs` files (Apps Script-only, not Node-testable) use `const`/`let`, matching `AppScripts/WebApp.gs`'s existing style. Exception: a `var` used specifically to declare a name that a same-named `function` elsewhere in the project already declares globally (Apps Script shares one global scope across all files in a project) — `let`/`const` cannot coexist with that function declaration and throws a `SyntaxError`, while `var` can. Task 2's `TokenAuth.js` is this exact case; see its code block's comment.
 - New `WebFrontend/*.html` files use `var`-based ES5 style, matching `AppScripts/Inventory.html`'s existing style — most of that file's state machine is being ported here close to verbatim.
 - Exactly **one** Apps Script Web App deployment serves the API for this entire plan. Task 1 creates it once; Tasks 4 and 5 push new *versions* to that same deployment (Apps Script editor: Deploy → Manage deployments → pencil icon → New version → Deploy) so its `/exec` URL never changes. Never create a second "API" deployment — that would silently break whichever URL the frontend isn't using.
 - Tasks involving a live Google/GitHub action the controller cannot perform (Apps Script deployment, GitHub repo/Pages setup, Google Cloud OAuth Console) are done by the owner, relayed through the controller — never delegated to an implementer subagent, which has no way to reach the user.
@@ -208,6 +208,15 @@ Expected: FAIL — `Cannot find module './TokenAuth.js'` (file doesn't exist yet
 - [ ] **Step 3: Write the implementation**
 
 ```javascript
+// var, not let/const: Apps Script concatenates every file in a project into
+// one shared global scope, and Access.js already declares a global function
+// isAllowedEmail(...). A top-level let/const of the same name would collide
+// with that function declaration and throw "Identifier 'isAllowedEmail' has
+// already been declared" the moment Apps Script evaluates the project — var
+// is the one declaration form that coexists with an existing function of
+// the same name. This guard body never runs in Apps Script anyway (module
+// is undefined there); verifyIdTokenClaims calls the global isAllowedEmail
+// from Access.js directly.
 if (typeof module !== 'undefined' && module.exports) {
   var { isAllowedEmail } = require('./Access.js');
 }
