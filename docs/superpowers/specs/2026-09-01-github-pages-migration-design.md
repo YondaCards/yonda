@@ -65,13 +65,17 @@ authorization via the ID token, so Apps Script's own access gate is set to
 
 ## Repo & hosting
 
-Everything stays in this one repo (`Yonda/`), which becomes a public GitHub
-repo — free GitHub Pages requires that. This means the repo's existing
-`docs/superpowers/` plans and specs (which reference the live Google Sheet
-URL and both `ALLOWED_EMAILS` addresses) become publicly readable too. The
-owner has confirmed this is acceptable: the Sheet URL alone grants no
-access (Google's own sharing permissions still gate the Sheet itself), and
-the email addresses aren't secret.
+Everything stays in this one repo (`Yonda/`). Free GitHub Pages requires a
+public repository — but this repo's git history still contains the
+Telegram bot token from before Plan 1's fix (removed from the current
+files, moved to `PropertiesService`, but still readable in old commits via
+`git log -p`). The owner chose not to rotate that token or rewrite history
+back when the repo was local-only; going public changes that calculus, so
+this was re-raised explicitly. Decision: **the repo stays private**, on a
+paid GitHub plan (~$4/month) that supports GitHub Pages on private repos.
+This also settles the earlier question about `docs/superpowers/` plans and
+specs (Sheet URL, both `ALLOWED_EMAILS` addresses) becoming publicly
+readable — with a private repo, they don't.
 
 The new static frontend lives in a new `WebFrontend/` folder at the repo
 root (not `/docs` — that's already the plans/specs folder). Publishing uses
