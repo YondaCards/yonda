@@ -21,7 +21,7 @@ function handleApiGet_(e) {
     }
     return jsonResponse_({ error: 'Неизвестное действие: ' + action });
   } catch (err) {
-    return jsonResponse_({ error: err.message });
+    return jsonResponse_({ error: 'Внутренняя ошибка' });
   }
 }
 
@@ -40,7 +40,7 @@ function handleApiPost_(e) {
     }
     return jsonResponse_({ error: 'Неизвестное действие: ' + body.action });
   } catch (err) {
-    return jsonResponse_({ error: err.message });
+    return jsonResponse_({ error: 'Внутренняя ошибка' });
   }
 }
 

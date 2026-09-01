@@ -12,12 +12,21 @@ function isTokenAuthError(err) {
 
 function signOut() {
   currentIdToken = null;
-  sessionStorage.removeItem(STORAGE_KEY);
+  try {
+    sessionStorage.removeItem(STORAGE_KEY);
+  } catch (err) {
+    // Storage unavailable (e.g. private browsing) — nothing to clear, proceed anyway.
+  }
   location.reload();
 }
 
 function initAuth(onSignedIn) {
-  var stored = sessionStorage.getItem(STORAGE_KEY);
+  var stored = null;
+  try {
+    stored = sessionStorage.getItem(STORAGE_KEY);
+  } catch (err) {
+    stored = null;
+  }
   if (stored) {
     currentIdToken = stored;
     onSignedIn();
@@ -27,7 +36,12 @@ function initAuth(onSignedIn) {
     client_id: OAUTH_CLIENT_ID,
     callback: function (response) {
       currentIdToken = response.credential;
-      sessionStorage.setItem(STORAGE_KEY, currentIdToken);
+      try {
+        sessionStorage.setItem(STORAGE_KEY, currentIdToken);
+      } catch (err) {
+        // Storage unavailable (e.g. private browsing) — keep the token in
+        // memory only and let sign-in proceed regardless.
+      }
       onSignedIn();
     }
   });

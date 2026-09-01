@@ -83,7 +83,7 @@
       var rows = '';
       state.items.forEach(function (item) {
         var fact = state.facts[item.name] === undefined ? '' : state.facts[item.name];
-        var stockLabel = 'Сейчас: ' + item.current + (item.unit ? (' ' + item.unit) : '');
+        var stockLabel = 'Сейчас: ' + escapeHtml(String(item.current)) + (item.unit ? (' ' + escapeHtml(item.unit)) : '');
         rows += '<div class="row"><div style="flex:1;"><div class="row-name">' + escapeHtml(item.name) + '</div>' +
           '<div class="row-stock">' + stockLabel + '</div></div>' +
           '<input class="fact-input" type="number" inputmode="decimal" placeholder="—" data-fact="' + escapeAttr(item.name) + '" value="' + escapeAttr(fact) + '"></div>';
@@ -205,7 +205,11 @@
     }
 
     function onError(err) {
-      if (isTokenAuthError(err)) { signOut(); return; }
+      if (isTokenAuthError(err)) {
+        alert('Сессия истекла — войдите заново. Введённые данные будут потеряны.');
+        signOut();
+        return;
+      }
       alert('Ошибка: ' + (err && err.message ? err.message : err));
     }
 

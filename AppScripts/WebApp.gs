@@ -26,7 +26,10 @@ function doPost(e) {
   if (body && typeof body.action === 'string') {
     return handleApiPost_(e);
   }
-  return handleTelegramWebhook_(e);
+  if (body && typeof body.update_id !== 'undefined') {
+    return handleTelegramWebhook_(e);
+  }
+  return jsonResponse_({ error: 'Неизвестный запрос' });
 }
 
 function include(filename) {

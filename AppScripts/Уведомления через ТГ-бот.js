@@ -335,6 +335,12 @@ function handleTelegramWebhook_(e) {
     }
 
     const chatId = message.chat.id;
+
+    if (String(chatId) !== String(TG_CHAT_ID)) {
+      Logger.log('⛔ Сообщение от постороннего chat_id: ' + chatId + ' — игнорируем');
+      return;
+    }
+
     const text   = message.text || "";
 
     if (text.startsWith("/баланс") || text.startsWith("/balance")) {
