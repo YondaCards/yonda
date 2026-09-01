@@ -1,0 +1,154 @@
+function getLocations() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(SHEET_GOODS_STOCK);
+  const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const totalColIndex = header.indexOf('Итого'); // 0-based; -1 if absent
+  const scanEnd = totalColIndex > 0 ? totalColIndex : header.length;
+  const locations = [];
+  for (let c = 1; c < scanEnd; c++) {
+    const name = header[c];
+    if (!name) continue;
+    locations.push(name);
+  }
+  return locations;
+}
+
+function getMaterialsSnapshot() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(SHEET_MATERIALS_STOCK);
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+  const data = sheet.getRange(2, 2, lastRow - 1, 3).getValues(); // B:D
+  return data
+    .filter((row) => row[0])
+    .map((row) => ({ name: row[0], unit: row[1] || 'шт', current: Number(row[2]) || 0 }));
+}
+
+function getProductsSnapshot(location) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(SHEET_GOODS_STOCK);
+  const lastCol = sheet.getLastColumn();
+  const header = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  const colIndex = header.indexOf(location); // 0-based
+  if (colIndex < 1) throw new Error('Точка не найдена в Склад товаров: ' + location);
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+  const names = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+  const values = sheet.getRange(2, colIndex + 1, lastRow - 1, 1).getValues();
+
+  const items = [];
+  for (let i = 0; i < names.length; i++) {
+    if (!names[i][0]) continue;
+    items.push({ name: names[i][0], current: Number(values[i][0]) || 0 });
+  }
+  return items;
+}
+
+function submitInventory(kind, location, counts, newItems) {
+  const dateStr = Utilities.formatDate(new Date(), 'Asia/Tashkent', 'dd.MM.yyyy');
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  if (kind === 'materials') return submitMaterialsInventory_(ss, counts, newItems, dateStr);
+  if (kind === 'products') return submitProductsInventory_(ss, location, counts, newItems, dateStr);
+  throw new Error('Неизвестный тип инвентаризации: ' + kind);
+}
+
+function submitMaterialsInventory_(ss, counts, newItems, dateStr) {
+  const stockSheet = ss.getSheetByName(SHEET_MATERIALS_STOCK);
+  const ledgerSheet = ss.getSheetByName(SHEET_MATERIALS_REGISTRY);
+  const byName = {};
+  getMaterialsSnapshot().forEach((it) => { byName[it.name] = it; });
+
+  let written = 0;
+
+  (counts || []).forEach((c) => {
+    const item = byName[c.name];
+    if (!item) return; // stale client-side data; skip rather than guess
+    const delta = computeDelta(item.current, c.fact);
+    if (delta === null) return;
+    const row = buildMaterialLedgerRow(c.name, delta, dateStr);
+    ledgerSheet.appendRow([new Date(), c.name, row.type, row.quantity, row.note]);
+    written++;
+  });
+
+  (newItems || []).forEach((ni) => {
+    const name = String(ni.name || '').trim();
+    if (!name) return;
+    if (byName[name]) {
+      const delta = computeDelta(byName[name].current, ni.fact);
+      if (delta === null) return;
+      const row = buildMaterialLedgerRow(name, delta, dateStr);
+      ledgerSheet.appendRow([new Date(), name, row.type, row.quantity, row.note]);
+      written++;
+      return;
+    }
+    const factNum = Number(ni.fact);
+    if (Number.isNaN(factNum) || factNum === 0) return;
+    const newRow = stockSheet.getLastRow() + 1;
+    stockSheet.getRange(newRow, 2).setValue(name);  // B: Материал
+    stockSheet.getRange(newRow, 3).setValue('шт');  // C: Ед.измерения (default — no unit picker in this tool)
+    stockSheet.getRange('D2').copyTo(stockSheet.getRange(newRow, 4)); // D: Остаток formula
+    const row = buildMaterialLedgerRow(name, factNum, dateStr);
+    ledgerSheet.appendRow([new Date(), name, row.type, row.quantity, row.note]);
+    written++;
+  });
+
+  return { written: written };
+}
+
+function submitProductsInventory_(ss, location, counts, newItems, dateStr) {
+  const stockSheet = ss.getSheetByName(SHEET_GOODS_STOCK);
+  const ledgerSheet = ss.getSheetByName(SHEET_GOODS_REGISTRY);
+  const byName = {};
+  getProductsSnapshot(location).forEach((it) => { byName[it.name] = it; });
+
+  let written = 0;
+
+  function appendGoodsRow(name, quantity, type, from, to) {
+    const row = [];
+    row[GOODS_COL.ID - 1] = '';
+    row[GOODS_COL.DATE - 1] = new Date();
+    row[GOODS_COL.REC_TYPE - 1] = 'Учёт товаров';
+    row[GOODS_COL.PRODUCT - 1] = name;
+    row[GOODS_COL.QTY - 1] = quantity;
+    row[GOODS_COL.TYPE - 1] = type;
+    row[GOODS_COL.FROM - 1] = from;
+    row[GOODS_COL.TO - 1] = to;
+    ledgerSheet.appendRow(row);
+  }
+
+  (counts || []).forEach((c) => {
+    const item = byName[c.name];
+    if (!item) return;
+    const delta = computeDelta(item.current, c.fact);
+    if (delta === null) return;
+    const row = buildGoodsLedgerRow(delta, location, dateStr);
+    appendGoodsRow(c.name, row.quantity, row.type, row.from, row.to);
+    written++;
+  });
+
+  (newItems || []).forEach((ni) => {
+    const name = String(ni.name || '').trim();
+    if (!name) return;
+    if (byName[name]) {
+      const delta = computeDelta(byName[name].current, ni.fact);
+      if (delta === null) return;
+      const row = buildGoodsLedgerRow(delta, location, dateStr);
+      appendGoodsRow(name, row.quantity, row.type, row.from, row.to);
+      written++;
+      return;
+    }
+    const factNum = Number(ni.fact);
+    if (Number.isNaN(factNum) || factNum === 0) return;
+    const newRow = stockSheet.getLastRow() + 1;
+    stockSheet.getRange(newRow, 1).setValue(name); // A: Товар
+    const lastCol = stockSheet.getLastColumn();
+    stockSheet.getRange(2, 2, 1, lastCol - 1).copyTo(stockSheet.getRange(newRow, 2, 1, lastCol - 1)); // B..: formulas
+    const row = buildGoodsLedgerRow(factNum, location, dateStr);
+    appendGoodsRow(name, row.quantity, row.type, row.from, row.to);
+    written++;
+  });
+
+  return { written: written };
+}
