@@ -28,10 +28,12 @@
 **Files:**
 - Create: `AppScripts/Api.gs`
 - Modify: `AppScripts/WebApp.gs`
+- Modify: `AppScripts/Уведомления через ТГ-бот.js` (rename its existing `doPost` — see Step 2, no behavior change)
 
 **Interfaces:**
 - Produces: `handleApiGet_(e)`, `handleApiPost_(e)`, `jsonResponse_(obj)` in `Api.gs` — Task 4 adds more `action` cases to `handleApiGet_`/`handleApiPost_` in this same file; it does not touch `WebApp.gs` again.
-- Produces: `doGet(e)` in `WebApp.gs` now branches to `handleApiGet_(e)` when `e.parameter.action` is present, otherwise runs its existing HTML-serving logic unchanged. `doPost(e)` is new in `WebApp.gs` and always delegates to `handleApiPost_(e)`.
+- Produces: `doGet(e)` in `WebApp.gs` now branches to `handleApiGet_(e)` when `e.parameter.action` is present, otherwise runs its existing HTML-serving logic unchanged. `doPost(e)` is new in `WebApp.gs` and routes to `handleApiPost_(e)` or `handleTelegramWebhook_(e)` (see Step 2).
+- Produces: `handleTelegramWebhook_(e)` in `Уведомления через ТГ-бот.js` — the project's pre-existing `doPost` body, renamed (Apps Script only allows one global `doPost`).
 
 This task proves the riskiest technical assumption in the spec — that a browser on a different origin can read JSON back from an Apps Script Web App — before anything else is built on top of it.
 
@@ -86,13 +88,29 @@ function doGet(e) {
   const email = Session.getActiveUser().getEmail();
 ```
 
-Leave the rest of `doGet` exactly as it is. Add a new function anywhere in the file (after `doGet`, before `include`):
+Leave the rest of `doGet` exactly as it is.
+
+**Before adding `doPost`, check for a naming collision:** `AppScripts/Уведомления через ТГ-бот.js` already declares `function doPost(e) {...}` for the Telegram bot webhook. Apps Script shares one global scope across every file in a project (same mechanism behind the `var`-vs-`let` note in Global Constraints); two `function doPost` declarations don't error, but the later-evaluated one silently wins, and the other becomes permanently unreachable. Fix this with a router, not a second declaration:
+
+1. In `AppScripts/Уведомления через ТГ-бот.js`, rename the existing `function doPost(e) {` to `function handleTelegramWebhook_(e) {` — leave the function's entire body untouched, only the name changes.
+2. In `AppScripts/WebApp.gs`, add the single project-wide `doPost` as the router (anywhere in the file, after `doGet`, before `include`):
 
 ```javascript
 function doPost(e) {
-  return handleApiPost_(e);
+  let body = null;
+  try {
+    body = JSON.parse(e.postData.contents);
+  } catch (err) {
+    body = null;
+  }
+  if (body && typeof body.action === 'string') {
+    return handleApiPost_(e);
+  }
+  return handleTelegramWebhook_(e);
 }
 ```
+
+Telegram Update objects (the webhook's payload shape) never have an `action` field, so this discriminates cleanly between the two callers without touching the Telegram handler's own logic.
 
 - [ ] **Step 3: Push to Apps Script**
 
