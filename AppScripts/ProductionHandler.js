@@ -28,18 +28,19 @@ function onEditProduction(e) {
 
   if (sheet.getName() !== SHEET_GOODS_REGISTRY) return;
 
+  const TYPE_COLUMN = 6; // F = "Тип" (not C = "Тип записи" — see Foundation plan Task 3)
   const col = e.range.getColumn();
   const row = e.range.getRow();
 
-  // Срабатывает только если изменилась колонка C (Тип)
-  if (col !== 3) return;
+  // Срабатывает только если изменилась колонка F (Тип)
+  if (col !== TYPE_COLUMN) return;
   if (e.value !== 'Производство') return;
 
   // Читаем всю строку
-  const rowData   = sheet.getRange(row, 1, 1, 7).getValues()[0];
-  const timestamp = rowData[0] || new Date();
-  const product   = rowData[1];
-  const qty       = Number(rowData[3]) || 0;
+  const rowData   = sheet.getRange(row, 1, 1, 8).getValues()[0];
+  const timestamp = rowData[1] || new Date();  // B = Дата
+  const product   = rowData[3];                 // D = Товар
+  const qty       = Number(rowData[4]) || 0;    // E = Количество
 
   if (!product || qty === 0) {
     SpreadsheetApp.getUi().alert('⚠️ Заполни Товар и Количество перед тем как ставить тип Производство');
