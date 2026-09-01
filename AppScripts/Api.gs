@@ -1,6 +1,6 @@
 function handleApiGet_(e) {
   try {
-    var action = e.parameter.action;
+    const action = e.parameter.action;
     if (action === 'ping') {
       return jsonResponse_({ pong: true });
     }
@@ -12,7 +12,7 @@ function handleApiGet_(e) {
 
 function handleApiPost_(e) {
   try {
-    var body = JSON.parse(e.postData.contents);
+    const body = JSON.parse(e.postData.contents);
     if (body.action === 'ping') {
       return jsonResponse_({ pong: true, received: body });
     }
