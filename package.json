@@ -1,0 +1,7 @@
+{
+  "name": "yonda-appscripts",
+  "private": true,
+  "scripts": {
+    "test": "node --test AppScripts/Lib"
+  }
+}
