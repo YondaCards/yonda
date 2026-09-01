@@ -115,7 +115,7 @@ instead of manual copy-paste into the browser editor.
   values now sourced from `PropertiesService.getScriptProperties()` instead
   of literals.
 
-- [ ] **Step 1: Add the one-time migration function**
+- [x] **Step 1: Add the one-time migration function**
 
 Create `AppScripts/MigrateSecrets.js`:
 ```javascript
@@ -129,7 +129,7 @@ function migrateSecretsToProperties() {
 }
 ```
 
-- [ ] **Step 2: Push and run the migration**
+- [x] **Step 2: Push and run the migration**
 
 ```bash
 cd AppScripts && clasp push
@@ -140,7 +140,7 @@ the Execution log for the confirmation message. This must happen *before*
 Step 3 removes the literal values — Step 3 deletes the only place those
 values exist outside Script Properties.
 
-- [ ] **Step 3: Replace the hardcoded consts**
+- [x] **Step 3: Replace the hardcoded consts**
 
 In `AppScripts/Уведомления через ТГ-бот.js`, replace:
 ```javascript
@@ -153,13 +153,13 @@ const TG_TOKEN   = PropertiesService.getScriptProperties().getProperty('TG_TOKEN
 const TG_CHAT_ID = PropertiesService.getScriptProperties().getProperty('TG_CHAT_ID');
 ```
 
-- [ ] **Step 4: Delete the migration file**
+- [x] **Step 4: Delete the migration file**
 
 ```bash
 rm AppScripts/MigrateSecrets.js
 ```
 
-- [ ] **Step 5: Push and verify no regressions**
+- [x] **Step 5: Push and verify no regressions**
 
 ```bash
 cd AppScripts && clasp push
@@ -170,7 +170,7 @@ Expected: the same Telegram notification format as before appears in the
 bot's chat within a few seconds. This confirms `TG_TOKEN`/`TG_CHAT_ID` still
 resolve correctly at runtime.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add "AppScripts/Уведомления через ТГ-бот.js"
@@ -200,7 +200,7 @@ The column that actually receives "Производство" is F ("Тип"), co
 written, manually typing "Производство" into a row's Тип cell never fires the
 material write-off.
 
-- [ ] **Step 1: Confirm the bug still reproduces on the live sheet**
+- [x] **Step 1: Confirm the bug still reproduces on the live sheet**
 
 ⚠️ MANUAL: use Товар = "О маме" — confirmed via "Справочники" columns
 M:P (Спецификация table) to have an 11-material BOM, all currently in
@@ -211,7 +211,7 @@ then set column F ("Тип") to "Производство".
 Expected (bug present): nothing happens — no alert, no new rows appended to
 "Реестр материалов".
 
-- [ ] **Step 2: Apply the fix**
+- [x] **Step 2: Apply the fix**
 
 In `AppScripts/ProductionHandler.js`, replace:
 ```javascript
@@ -243,13 +243,13 @@ function onEditProduction(e) {
   if (e.value !== 'Производство') return;
 ```
 
-- [ ] **Step 3: Push**
+- [x] **Step 3: Push**
 
 ```bash
 cd AppScripts && clasp push
 ```
 
-- [ ] **Step 4: Re-run the same manual scenario from Step 1**
+- [x] **Step 4: Re-run the same manual scenario from Step 1**
 
 Repeat Step 1's action (new row, Товар = "О маме", Количество 1, column F
 set to "Производство").
@@ -265,13 +265,13 @@ which material and by how much, and treat it as informational, not a fix
 failure (re-run with a smaller qty or a different well-stocked product to
 still confirm the trigger fires).
 
-- [ ] **Step 5: Clean up the test row**
+- [x] **Step 5: Clean up the test row**
 
 Delete the test row created in Steps 1/4 from "Реестр товаров", and if Step 4
 produced "Списание" rows in "Реестр материалов", delete those too (or add
 matching "Приход" rows) so real stock figures aren't left skewed by test data.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add AppScripts/ProductionHandler.js
@@ -282,12 +282,50 @@ git commit -m "fix: onEditProduction now watches Тип (column F), not Тип �
 
 ## Self-Review Notes
 
-- **Spec coverage:** This plan covers the spec's "Попутное исправление" section
-  in full. It intentionally does not cover the Inventory or Cart tools (spec
-  sections 2–3) — those are separate plans per the Scope Check in
-  writing-plans, since they're independently testable subsystems.
+- **Spec coverage:** Task 3 covers only the `onEditProduction` (onEdit trigger)
+  half of the spec's "Попутное исправление" section. The spec also asked to
+  check `handleProduction` (the onFormSubmit sibling) against the current
+  sheet structure, which was deliberately deferred — evidence (the ledger)
+  shows `handleProduction` fired during testing with no visible effect,
+  consistent with it having an analogous stale-column bug, but this was never
+  verified column-by-column against the real "Ответы на форму (1)" layout, so
+  no fix was guessed. This is carried forward as a task for Plan 2. This plan
+  intentionally does not cover the Inventory or Cart tools (spec sections
+  2–3) — those are separate plans per the Scope Check in writing-plans, since
+  they're independently testable subsystems.
 - **Placeholder scan:** No TBD/TODO; the two manual OAuth/ID-retrieval steps
   are explicitly marked ⚠️ MANUAL because they cannot be done by an agent, not
   because they're undefined.
 - **Type/name consistency:** `TG_TOKEN`/`TG_CHAT_ID` names preserved exactly
   so `Уведомления.gs`'s existing references keep working unchanged.
+
+## Production Hand-Off
+
+This plan was executed against a **sandbox copy** of the real production
+spreadsheet/Apps Script project (confirmed by the user mid-plan — Google
+does not copy installable triggers when duplicating a bound script, which
+is why the sandbox needed `createProductionTrigger()` run manually before
+Task 3 could be verified live). To apply the same changes to production:
+
+1. **Script Properties first.** Before touching production source, open
+   the production Apps Script project's editor, go to Project Settings →
+   Script Properties, and manually add `TG_TOKEN` and `TG_CHAT_ID` with
+   the same values currently hardcoded in production's own
+   `Уведомления через ТГ-бот.js` (copy them from that file directly — do
+   not retype from this repo, which no longer contains the literal
+   values). This must happen before step 2, or all Telegram notifications
+   go silent the moment the literals are removed (see the null-guard added
+   in this same plan's fix wave — it logs and returns instead of crashing,
+   but still sends nothing until Script Properties are set).
+2. **Apply the two file diffs by hand**, using `git show 6bdf1e9` and
+   `git show e732087` from this repo as the reference (both diffs are
+   small — a handful of lines each). Production's `.clasp.json` will have
+   a different `scriptId` than this sandbox's (`1yDdbX9O...`) — do not
+   copy this repo's `.clasp.json` over production's.
+3. **Install triggers if they aren't already.** Production may or may not
+   already have `onFormSubmit`/`onEdit` triggers installed — check the
+   Triggers panel first; if the production Производство trigger is
+   missing, run `createProductionTrigger()` once there too.
+4. **Verify with one live test**, same as this plan's Task 3: a small
+   `Производство` entry for a well-stocked BOM'd product, confirm the
+   expected `Списание` rows appear, then delete the test data.
