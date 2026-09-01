@@ -1,6 +1,9 @@
 const ALLOWED_EMAILS = ['shuhratorifjonov29@gmail.com', 'nurakvlnk@gmail.com'];
 
 function doGet(e) {
+  if (e && e.parameter && e.parameter.action) {
+    return handleApiGet_(e);
+  }
   const email = Session.getActiveUser().getEmail();
   if (!isAllowedEmail(email, ALLOWED_EMAILS)) {
     return HtmlService.createTemplateFromFile('NoAccess').evaluate()
@@ -11,6 +14,10 @@ function doGet(e) {
   return HtmlService.createTemplateFromFile(file).evaluate()
     .setTitle('Yonda')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+}
+
+function doPost(e) {
+  return handleApiPost_(e);
 }
 
 function include(filename) {
