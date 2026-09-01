@@ -40,7 +40,7 @@ This task proves the riskiest technical assumption in the spec — that a browse
 ```javascript
 function handleApiGet_(e) {
   try {
-    var action = e.parameter.action;
+    const action = e.parameter.action;
     if (action === 'ping') {
       return jsonResponse_({ pong: true });
     }
@@ -52,7 +52,7 @@ function handleApiGet_(e) {
 
 function handleApiPost_(e) {
   try {
-    var body = JSON.parse(e.postData.contents);
+    const body = JSON.parse(e.postData.contents);
     if (body.action === 'ping') {
       return jsonResponse_({ pong: true, received: body });
     }
@@ -370,11 +370,11 @@ const OAUTH_CLIENT_ID = 'PASTE_REAL_CLIENT_ID_HERE.apps.googleusercontent.com';
 
 function handleApiGet_(e) {
   try {
-    var action = e.parameter.action;
+    const action = e.parameter.action;
     if (action === 'ping') {
       return jsonResponse_({ pong: true });
     }
-    var auth = verifyRequestToken_(e.parameter.idToken);
+    const auth = verifyRequestToken_(e.parameter.idToken);
     if (!auth.ok) {
       return jsonResponse_({ error: auth.reason });
     }
@@ -395,11 +395,11 @@ function handleApiGet_(e) {
 
 function handleApiPost_(e) {
   try {
-    var body = JSON.parse(e.postData.contents);
+    const body = JSON.parse(e.postData.contents);
     if (body.action === 'ping') {
       return jsonResponse_({ pong: true, received: body });
     }
-    var auth = verifyRequestToken_(body.idToken);
+    const auth = verifyRequestToken_(body.idToken);
     if (!auth.ok) {
       return jsonResponse_({ error: auth.reason });
     }
@@ -414,12 +414,12 @@ function handleApiPost_(e) {
 
 function verifyRequestToken_(idToken) {
   if (!idToken) return { ok: false, reason: 'Токен не передан' };
-  var response = UrlFetchApp.fetch(
+  const response = UrlFetchApp.fetch(
     'https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(idToken),
     { muteHttpExceptions: true }
   );
   if (response.getResponseCode() !== 200) return { ok: false, reason: 'Токен недействителен' };
-  var claims = JSON.parse(response.getContentText());
+  const claims = JSON.parse(response.getContentText());
   return verifyIdTokenClaims(claims, OAUTH_CLIENT_ID, ALLOWED_EMAILS);
 }
 
