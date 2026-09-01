@@ -318,7 +318,7 @@ function padRight(str, len) {
 // ──────────────────────────────────────────────────────────────
 // WEBHOOK — принимает команды от Telegram
 // ──────────────────────────────────────────────────────────────
-function doPost(e) {
+function handleTelegramWebhook_(e) {
   try {
 
     Logger.log('doPost сработал');

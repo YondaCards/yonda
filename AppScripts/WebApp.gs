@@ -17,7 +17,16 @@ function doGet(e) {
 }
 
 function doPost(e) {
-  return handleApiPost_(e);
+  let body = null;
+  try {
+    body = JSON.parse(e.postData.contents);
+  } catch (err) {
+    body = null;
+  }
+  if (body && typeof body.action === 'string') {
+    return handleApiPost_(e);
+  }
+  return handleTelegramWebhook_(e);
 }
 
 function include(filename) {
