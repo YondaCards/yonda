@@ -7,7 +7,7 @@
 <body>
   <div id="app"></div>
   <script>
-    var state = { screen: 'type', type: null, location: null, locations: null, items: null, facts: {}, customItems: [], changes: [] };
+    var state = { screen: 'type', type: null, location: null, locations: null, items: null, facts: {}, customItems: [], changes: [], written: 0 };
 
     function render() {
       var app = document.getElementById('app');
@@ -67,6 +67,7 @@
       document.querySelectorAll('[data-loc]').forEach(function (btn) {
         btn.onclick = function () {
           state.location = btn.getAttribute('data-loc');
+          state.facts = {}; state.customItems = [];
           state.screen = 'counting'; state.items = null; render();
           google.script.run.withSuccessHandler(function (items) { state.items = items; render(); })
             .withFailureHandler(onError).getProductsSnapshot(state.location);
@@ -150,7 +151,7 @@
         counts.push({ name: item.name, fact: raw });
       });
       var newItems = state.customItems
-        .filter(function (c) { return c.name && c.fact !== '' && !isNaN(Number(c.fact)); })
+        .filter(function (c) { return c.name && c.fact !== '' && !isNaN(Number(c.fact)) && Number(c.fact) !== 0; })
         .map(function (c) { return { name: c.name, fact: c.fact }; });
 
       state.changes = counts.map(function (c) {
@@ -165,7 +166,8 @@
       var btn = document.getElementById('save-counts');
       btn.setAttribute('disabled', 'true');
       btn.textContent = 'Сохраняем…';
-      google.script.run.withSuccessHandler(function () {
+      google.script.run.withSuccessHandler(function (result) {
+        state.written = result && typeof result.written === 'number' ? result.written : state.changes.length;
         state.screen = 'confirm'; render();
       }).withFailureHandler(function (err) {
         btn.removeAttribute('disabled'); btn.textContent = 'Сохранить';
@@ -179,7 +181,7 @@
         rows += '<div class="change-row"><div style="flex:1;font-size:14px;font-weight:600;">' + escapeHtml(chg.name) + '</div>' +
           '<div style="font-size:14px;font-weight:800;color:oklch(0.45 0.14 220);">' + escapeHtml(chg.label) + '</div></div>';
       });
-      var summary = state.changes.length === 0 ? 'Расхождений не найдено' : 'Обновлено позиций: ' + state.changes.length;
+      var summary = state.written === 0 ? 'Расхождений не найдено' : 'Обновлено позиций: ' + state.written;
       return '' +
         '<div class="screen">' +
           '<div style="display:flex;flex-direction:column;align-items:center;gap:10px;padding:40px 20px 22px;">' +
@@ -194,7 +196,7 @@
 
     function bindConfirm() {
       document.getElementById('finish').onclick = function () {
-        state = { screen: 'type', type: null, location: null, locations: null, items: null, facts: {}, customItems: [], changes: [] };
+        state = { screen: 'type', type: null, location: null, locations: null, items: null, facts: {}, customItems: [], changes: [], written: 0 };
         render();
       };
     }

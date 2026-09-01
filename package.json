@@ -2,6 +2,6 @@
   "name": "yonda-appscripts",
   "private": true,
   "scripts": {
-    "test": "node --test AppScripts/Lib"
+    "test": "node --test \"AppScripts/Lib/**/*.test.js\""
   }
 }

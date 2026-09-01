@@ -149,7 +149,7 @@ function submitProductsInventory_(ss, location, counts, newItems, dateStr) {
     // Справочники!A (Справочник цен) and let the ARRAYFORMULA extend on its own.
     const referencesSheet = ss.getSheetByName(SHEET_REFERENCES); // declared in Уведомления через ТГ-бот.js -- reused, not redeclared
     const priceListLastRow = findLastNonEmptyRow_(referencesSheet, 1); // column A of Справочник цен
-    const newRow = priceListLastRow + 1; // Справочники and Склад товаров are row-for-row aligned starting at row 2 (ARRAYFORMULA(IF(...))) -- no independent scan of Склад товаров needed, and scanning it is exactly what broke a trailing "Итого" totals row last time
+    const newRow = priceListLastRow + 1; // Справочники and Склад товаров are row-for-row aligned starting at row 2 (ARRAYFORMULA(IF(...))) -- no independent scan of Склад товаров needed; an earlier attempt scanned Склад товаров's own column A for the last non-blank row and landed on its trailing "Итого" summary row instead of the spilled name, corrupting it
     referencesSheet.getRange(newRow, 1).setValue(name); // A: Название товара -- triggers Склад товаров's ARRAYFORMULA to extend
     SpreadsheetApp.flush();
 
@@ -162,8 +162,8 @@ function submitProductsInventory_(ss, location, counts, newItems, dateStr) {
     const stockLastCol = stockSheet.getLastColumn();
     const stockHeader = stockSheet.getRange(1, 1, 1, stockLastCol).getValues()[0];
     const stockTotalColIndex = stockHeader.indexOf('Итого') + 1; // 1-based; 0 if absent
-    const stockLastLocationCol = stockTotalColIndex > 0 ? stockTotalColIndex - 1 : stockLastCol;
-    stockSheet.getRange(2, 2, 1, stockLastLocationCol - 1).copyTo(stockSheet.getRange(newRow, 2, 1, stockLastLocationCol - 1)); // B..: formulas, bounded before Итого
+    const stockCopyWidth = stockTotalColIndex > 0 ? stockTotalColIndex - 1 : stockLastCol - 1; // through Итого inclusive (B..Итого), or to the sheet's last column if Итого is absent
+    stockSheet.getRange(2, 2, 1, stockCopyWidth).copyTo(stockSheet.getRange(newRow, 2, 1, stockCopyWidth)); // B..Итого: formulas
     const row = buildGoodsLedgerRow(factNum, location, dateStr);
     appendGoodsRow(name, row.quantity, row.type, row.from, row.to);
     written++;

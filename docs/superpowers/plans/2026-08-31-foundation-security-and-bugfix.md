@@ -329,3 +329,22 @@ Task 3 could be verified live). To apply the same changes to production:
 4. **Verify with one live test**, same as this plan's Task 3: a small
    `Производство` entry for a well-stocked BOM'd product, confirm the
    expected `Списание` rows appear, then delete the test data.
+5. **Re-run the formula-extension script.** Once the code below is copied to
+   production, run `extendGoodsStockFormulaForInventory()` there too (same
+   before/after spot-check as described above for the original run).
+6. **Copy the inventory tool's files by hand**, using `git show` on this
+   plan's commits as the reference (`AppScripts/Lib/Access.js`,
+   `AppScripts/Lib/InventoryLogic.js`, `AppScripts/MaintenanceScripts.js`,
+   `AppScripts/InventoryService.gs`, `AppScripts/WebApp.gs`,
+   `AppScripts/Styles.html`, `AppScripts/Index.html`,
+   `AppScripts/NoAccess.html`, `AppScripts/Inventory.html`). Update
+   `ALLOWED_EMAILS` in `WebApp.gs` if production's owner/partner emails
+   differ from the sandbox's.
+7. **Create a NEW, separate "Inventory tool" web app deployment** in
+   production — same caution as before: do not touch whatever deployment
+   already serves production's Telegram webhook.
+8. **Verify**: open the new deployment URL as the owner, confirm the
+   Инструменты home screen and the Инвентаризация flow both load; have the
+   partner account open the same URL once to confirm they're not blocked by
+   the allowlist (this was never tested in the sandbox either — do it for
+   real in production).
