@@ -92,8 +92,8 @@ Leave the rest of `doGet` exactly as it is.
 
 **Before adding `doPost`, check for a naming collision:** `AppScripts/Уведомления через ТГ-бот.js` already declares `function doPost(e) {...}` for the Telegram bot webhook. Apps Script shares one global scope across every file in a project (same mechanism behind the `var`-vs-`let` note in Global Constraints); two `function doPost` declarations don't error, but the later-evaluated one silently wins, and the other becomes permanently unreachable. Fix this with a router, not a second declaration:
 
-1. In `AppScripts/Уведомления через ТГ-бот.js`, rename the existing `function doPost(e) {` to `function handleTelegramWebhook_(e) {` — leave the function's entire body untouched, only the name changes.
-2. In `AppScripts/WebApp.gs`, add the single project-wide `doPost` as the router (anywhere in the file, after `doGet`, before `include`):
+1. In `AppScripts/Уведомления через ТГ-бот.js`, rename the existing `function doPost(e) {` to `function handleTelegramWebhook_(e) {` — leave the function's entire body untouched except one addition: immediately after `chatId` is extracted (`const chatId = message.chat.id;`), reject any chat that isn't the bot's own configured one — `if (String(chatId) !== String(TG_CHAT_ID)) { Logger.log('Rejected chat_id: ' + chatId); return; }` — `TG_CHAT_ID` is already a global constant in this same file. This is defense-in-depth: the router below discriminates by payload shape, not caller identity, so the handler must not trust an arbitrary `chat_id` on its own.
+2. In `AppScripts/WebApp.gs`, add the single project-wide `doPost` as the router (anywhere in the file, after `doGet`, before `include`). The API path is identified by `body.action`; the Telegram path must be identified by `body.update_id` (present on every real Telegram `Update`, and never sent by this project's own API calls) — never treat "no `action` field" alone as proof of Telegram origin, since that would let anyone reach the Telegram handler by POSTing any JSON body without an `action` field:
 
 ```javascript
 function doPost(e) {
@@ -106,7 +106,10 @@ function doPost(e) {
   if (body && typeof body.action === 'string') {
     return handleApiPost_(e);
   }
-  return handleTelegramWebhook_(e);
+  if (body && typeof body.update_id !== 'undefined') {
+    return handleTelegramWebhook_(e);
+  }
+  return jsonResponse_({ error: 'Неизвестный запрос' });
 }
 ```
 
