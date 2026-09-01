@@ -974,3 +974,42 @@ git commit -m "docs: add Production Hand-Off section"
 ```
 
 - [ ] **Step 5: Report DONE**
+
+## Production Hand-Off
+
+This plan was built and verified against the sandbox Google Sheet/Apps
+Script project. To apply the same changes to the real production system:
+
+1. **Rotate the production Telegram bot token first, before anything else
+   below.** This sandbox repo's git history has carried the real
+   production bot's token in plaintext since before Plan 1 (this plan's
+   own repo went public with that token still in its history — the
+   owner's explicit, informed decision, made twice this session — on the
+   condition that it gets rotated here). In Telegram, message
+   `@BotFather`, use `/token` (or `/revoke` then `/token`) on the
+   production bot, get the new token, and update it in the production
+   Apps Script project's Script Properties (the same place the old token
+   already lives, per Plan 1's fix) — never in code. Confirm the bot still
+   works with the new token before continuing.
+2. **Copy the code**, using `git show` on this plan's commits as the
+   reference: `AppScripts/Api.gs`, `AppScripts/Lib/TokenAuth.js`,
+   `AppScripts/WebApp.gs`'s `doGet`/`doPost` changes, and the entire
+   `WebFrontend/` folder.
+3. **Create a second OAuth Client ID** in Google Cloud Console (same steps
+   as Task 4, Step 1) — a fresh one scoped to production's GitHub Pages
+   origin, with both production `ALLOWED_EMAILS` addresses as test users
+   (confirm they match production's `WebApp.gs` — update if not).
+4. **Create a second GitHub repo** for production (or reuse this one if
+   production and sandbox are meant to share a live site — decide with the
+   owner; the sandbox and production Apps Script projects have different
+   Script IDs, so they cannot share one exec URL regardless). Public is
+   fine, same as this plan's repo, since Step 1 already rotated the token
+   this repo's history exposes. Enable Pages the same way as Task 3.
+5. **Create a new, separate Web App deployment** in the production Apps
+   Script project for the API — same caution as always: don't touch
+   whichever deployment already serves production's Telegram webhook or
+   its existing HTML pages.
+6. **Update `WebFrontend/api.js`'s `API_BASE_URL`** and `auth.js`'s
+   `OAUTH_CLIENT_ID`** to production's values before pushing.
+7. **Verify**: repeat Task 6, Step 2 against production, with both the
+   owner and the partner.
