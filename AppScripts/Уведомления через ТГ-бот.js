@@ -35,7 +35,6 @@ function onFormSubmit(e) {
   else if (recordType === "Доход")             handleIncomeNotification(row);
   else if (recordType === "Выплата")           handlePayoutNotification(row);
   else if (recordType === "Переводы")          handleTransferNotification(row);
-  else if (recordType === "Учёт товаров") handleStockNotification(row);
 }
 
 // ──────────────────────────────────────────────────────────────

@@ -10,14 +10,23 @@ const GOODS_COL = { ID: 1, DATE: 2, REC_TYPE: 3, PRODUCT: 4, QTY: 5, TYPE: 6, FR
 function handleProduction(e) {
   const row = e.values;
 
-  // Колонки Реестра товаров (0-based)
-  // A=0 Дата, B=1 Товар, C=2 Тип, D=3 Количество, E=4 Откуда, F=5 Куда, G=6 Примечание
-  const timestamp = new Date(row[0]);
-  const product   = row[1];
-  const type      = row[2];
-  const qty       = Number(row[3]) || 0;
+  // Колонки "Ответы на форму (1)" (0-based), не "Реестр товаров" — e.values
+  // на onFormSubmit всегда отражает лист самой формы. Индексы подтверждены
+  // по живому 28-колоночному листу, см.
+  // docs/superpowers/specs/2026-09-02-inventory-layered-architecture-fix-design.md
+  // B=1 Тип записи, T=19 Вид действия, U=20 Тип операции,
+  // V=21 Товар (пополнение), W=22 Количество (пополнение)
+  const recordType = row[1];
+  const action      = row[19];
+  const opType      = row[20];
 
-  if (type !== 'Производство') return;
+  if (recordType !== 'Учет товаров') return; // без "ё" — совпадает с живым значением формы
+  if (action !== 'Пополнение') return;
+  if (opType !== 'Производство') return;
+
+  const timestamp = new Date(row[0]);
+  const product   = row[21];
+  const qty       = Number(row[22]) || 0;
 
   writeOffMaterials(timestamp, product, qty);
 }
