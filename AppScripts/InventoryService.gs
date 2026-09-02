@@ -99,23 +99,29 @@ function submitMaterialsInventory_(ss, counts, newItems, dateStr) {
 
 function submitProductsInventory_(ss, location, counts, newItems, dateStr) {
   const stockSheet = ss.getSheetByName(SHEET_GOODS_STOCK);
-  const ledgerSheet = ss.getSheetByName(SHEET_GOODS_REGISTRY);
   const byName = {};
   getProductsSnapshot(location).forEach((it) => { byName[it.name] = it; });
 
   let written = 0;
 
-  function appendGoodsRow(name, quantity, type, from, to) {
+  function appendGoodsRow(name, quantity, from, to) {
+    const formSheet = ss.getSheetByName(SHEET_FORM);
+    const FORM_COL_TIP_ZAPISI = 2;                  // B: Тип записи
+    const FORM_COL_VID_DEISTVIYA = 20;              // T: Вид действия
+    const FORM_COL_TOVAR_PEREMESCHENIE = 25;        // Y: Товар (перемещение)
+    const FORM_COL_KOLICHESTVO_PEREMESCHENIE = 26;  // Z: Количество (перемещение)
+    const FORM_COL_OTKUDA = 27;                     // AA: Откуда
+    const FORM_COL_KUDA = 28;                       // AB: Куда
+
     const row = [];
-    row[GOODS_COL.ID - 1] = '';
-    row[GOODS_COL.DATE - 1] = new Date();
-    row[GOODS_COL.REC_TYPE - 1] = 'Учёт товаров';
-    row[GOODS_COL.PRODUCT - 1] = name;
-    row[GOODS_COL.QTY - 1] = quantity;
-    row[GOODS_COL.TYPE - 1] = type;
-    row[GOODS_COL.FROM - 1] = from;
-    row[GOODS_COL.TO - 1] = to;
-    ledgerSheet.appendRow(row);
+    row[0] = new Date(); // A: Отметка времени
+    row[FORM_COL_TIP_ZAPISI - 1] = 'Учет товаров';
+    row[FORM_COL_VID_DEISTVIYA - 1] = 'Инвентаризация';
+    row[FORM_COL_TOVAR_PEREMESCHENIE - 1] = name;
+    row[FORM_COL_KOLICHESTVO_PEREMESCHENIE - 1] = quantity;
+    row[FORM_COL_OTKUDA - 1] = from;
+    row[FORM_COL_KUDA - 1] = to;
+    formSheet.appendRow(row);
   }
 
   (counts || []).forEach((c) => {
@@ -124,7 +130,7 @@ function submitProductsInventory_(ss, location, counts, newItems, dateStr) {
     const delta = computeDelta(item.current, c.fact);
     if (delta === null) return;
     const row = buildGoodsLedgerRow(delta, location, dateStr);
-    appendGoodsRow(c.name, row.quantity, row.type, row.from, row.to);
+    appendGoodsRow(c.name, row.quantity, row.from, row.to);
     written++;
   });
 
@@ -135,7 +141,7 @@ function submitProductsInventory_(ss, location, counts, newItems, dateStr) {
       const delta = computeDelta(byName[name].current, ni.fact);
       if (delta === null) return;
       const row = buildGoodsLedgerRow(delta, location, dateStr);
-      appendGoodsRow(name, row.quantity, row.type, row.from, row.to);
+      appendGoodsRow(name, row.quantity, row.from, row.to);
       written++;
       return;
     }
@@ -165,7 +171,7 @@ function submitProductsInventory_(ss, location, counts, newItems, dateStr) {
     const stockCopyWidth = stockTotalColIndex > 0 ? stockTotalColIndex - 1 : stockLastCol - 1; // through Итого inclusive (B..Итого), or to the sheet's last column if Итого is absent
     stockSheet.getRange(2, 2, 1, stockCopyWidth).copyTo(stockSheet.getRange(newRow, 2, 1, stockCopyWidth)); // B..Итого: formulas
     const row = buildGoodsLedgerRow(factNum, location, dateStr);
-    appendGoodsRow(name, row.quantity, row.type, row.from, row.to);
+    appendGoodsRow(name, row.quantity, row.from, row.to);
     written++;
   });
 
