@@ -24,3 +24,23 @@ input::placeholder { color: oklch(0.72 0.005 250); }
 .change-row { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 11px; background: oklch(0.97 0.003 250); }
 .spinner { text-align: center; padding: 40px 20px; color: oklch(0.55 0.01 250); font-size: 14px; }
 .signin-wrap { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; min-height: 100vh; padding: 20px; }
+.cart-pick { text-align: left; border: none; background: transparent; width: 100%; }
+.price-btn { border: none; background: transparent; padding: 0; font-size: 12.5px; color: oklch(0.55 0.01 250); font-weight: 600; }
+.badge-service { display: inline-block; padding: 1px 6px; border-radius: 6px; background: oklch(0.93 0.05 280); color: oklch(0.4 0.14 280); font-size: 10.5px; font-weight: 700; text-transform: uppercase; }
+.badge-edited { display: inline-block; padding: 1px 6px; border-radius: 6px; background: oklch(0.93 0.08 60); color: oklch(0.4 0.14 60); font-size: 10.5px; font-weight: 700; }
+.qty-stepper { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.qty-btn { width: 30px; height: 30px; border-radius: 8px; border: 1.5px solid oklch(0.88 0.005 250); background: white; font-size: 16px; font-weight: 700; }
+.qty-value { min-width: 18px; text-align: center; font-size: 14px; font-weight: 700; }
+.chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { padding: 9px 14px; border-radius: 20px; border: 1.5px solid oklch(0.88 0.005 250); background: white; font-size: 13px; font-weight: 600; }
+.chip.selected { background: oklch(0.45 0.14 220); border-color: oklch(0.45 0.14 220); color: white; }
+.toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; }
+.cart-name-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.price-edit-input { width: 116px; height: 30px; border-radius: 8px; border: 1.5px solid oklch(0.45 0.14 220); background: oklch(0.98 0.002 250); font-size: 13px; font-weight: 700; padding: 0 8px; font-family: inherit; }
+.total-edit-input { width: 140px; height: 38px; border-radius: 10px; border: 1.5px solid oklch(0.45 0.14 220); background: oklch(0.98 0.002 250); font-size: 16px; font-weight: 800; padding: 0 10px; font-family: inherit; }
+.service-form { display: flex; flex-direction: column; gap: 8px; padding: 10px 0 6px; border-bottom: 1px solid oklch(0.92 0.005 250); }
+.service-form-row { display: flex; gap: 8px; }
+.service-input { flex: 1; height: 40px; border-radius: 10px; border: 1.5px solid oklch(0.88 0.005 250); padding: 0 12px; font-size: 13.5px; font-weight: 600; background: oklch(0.98 0.002 250); font-family: inherit; min-width: 0; }
+.service-form-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.btn-ghost { padding: 9px 14px; border-radius: 9px; border: none; background: none; color: oklch(0.55 0.01 250); font-size: 13px; font-weight: 700; }
+.btn-accent-sm { padding: 9px 16px; border-radius: 9px; border: none; background: oklch(0.45 0.14 220); color: white; font-size: 13px; font-weight: 800; }
