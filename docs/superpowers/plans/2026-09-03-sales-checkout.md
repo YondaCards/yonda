@@ -1289,7 +1289,7 @@ Open `sales.html` locally (or after Task 12's deploy, on the real GitHub Pages U
 7. The footer total updates live as the cart changes; "Оформить продажу" is disabled while the cart is empty and enabled once it has at least one item.
 8. Tapping the footer "Итого" itself (not a line) opens an inline field pre-filled with the current subtotal; entering a different number shows it with the original subtotal struck through beside it and an "изменено" badge, and the checkout screen's "К оплате" reflects the corrected number, not the subtotal.
 9. Tapping "Оформить продажу" opens the checkout screen with point/payment chips; "Подтвердить" stays disabled until both are picked.
-10. Confirming shows the confirmation screen with the corrected total (if one was set) and item list; "Новая продажа" returns to an empty cart on the same catalog, with point, payment, and any total override all reset.
+10. Confirming shows the confirmation screen with the corrected total (if one was set) and item list; "Новая продажа" returns to an empty cart on the same catalog, with the total override cleared but point and payment kept selected (per `bindConfirm`'s reset — a following sale rarely needs both reselected on the same shift).
 
 - [ ] **Step 3: Commit**
 
