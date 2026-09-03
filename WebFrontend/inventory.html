@@ -94,7 +94,7 @@
           '<button class="remove-btn" data-remove-custom="' + ci.id + '">' + removeIcon() + '</button></div>';
       });
       var subtitle = state.type === 'materials' ? 'Основной склад' : state.location;
-      var reconciliationToggle = state.type === 'products' ?
+      var reconciliationToggle = (state.type === 'products' && state.location === 'Основной склад') ?
         '<div class="toggle-row" style="padding:10px 20px 0;"><label style="font-size:13.5px;font-weight:600;">Это сверка продаж</label>' +
         '<input type="checkbox" id="sale-reconciliation-toggle"' + (state.isSaleReconciliation ? ' checked' : '') + '></div>' : '';
       return '' +

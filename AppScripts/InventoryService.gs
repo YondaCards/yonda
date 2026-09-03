@@ -129,7 +129,7 @@ function submitProductsInventory_(ss, location, counts, newItems, dateStr, isSal
     if (!item) return; // stale client-side data; skip rather than guess
     const delta = computeDelta(item.current, c.fact);
     if (delta === null) return;
-    const isPostcard = POSTCARD_VARIETY_NAMES.indexOf(c.name) !== -1;
+    const isPostcard = POSTCARD_VARIETY_NAMES.indexOf(c.name) !== -1 && location === 'Основной склад';
     const classification = classifyGoodsDelta(delta, isPostcard, !!isSaleReconciliation);
     const row = buildGoodsLedgerRow(delta, location, dateStr, classification.type);
     appendGoodsRow_(ss, c.name, row.quantity, classification.type, row.from, row.to);
@@ -202,6 +202,22 @@ function testProdazhaLayer2Wiring_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   appendGoodsRow_(ss, 'ТЕСТ Реестр Продажа', 1, 'Продажа', 'Основной склад', '');
   Logger.log('Синтетическая строка записана в "Ответы на форму (1)". Откройте "Реестр товаров": должна появиться строка с Тип="Продажа", Товар="ТЕСТ Реестр Продажа", Откуда="Основной склад", Количество=1. Если строка не появилась или Тип пуст/неверен, расширьте формулу Тип по образцу ветки "Инвентаризация".');
+}
+
+// Temporary — run once by hand from the Apps Script editor before go-live to
+// confirm every name in POSTCARD_VARIETY_NAMES has a matching row in the live
+// "Справочник цен"/"Склад товаров". A silent mismatch (e.g. a Latin apostrophe
+// vs. a Unicode modifier letter in an Uzbek word) would otherwise fail two
+// ways at once: that variety stays sellable as itself in the sales catalog,
+// and never gets recognized during postcard reconciliation.
+function testPostcardVarietyNamesMatchCatalog_() {
+  const catalogNames = getProductsSnapshot('Основной склад').map(function (item) { return item.name; });
+  const missing = POSTCARD_VARIETY_NAMES.filter(function (name) { return catalogNames.indexOf(name) === -1; });
+  if (missing.length === 0) {
+    Logger.log('OK: все ' + POSTCARD_VARIETY_NAMES.length + ' видов открыток найдены в Основной склад.');
+  } else {
+    Logger.log('НЕ НАЙДЕНО в Основной склад (' + missing.length + '): ' + missing.join(' | '));
+  }
 }
 
 const POSTCARD_VARIETY_NAMES = [

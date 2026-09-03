@@ -36,7 +36,11 @@
     }
 
     function cartTotal() {
-      return state.cart.reduce(function (sum, item) { return sum + Number(item.price) * Number(item.qty); }, 0);
+      // A per-line price can be a repeating fraction (enteredTotal / qty from a
+      // cashier editing a line's total) — round back to the nearest whole unit
+      // before summing so the total matches what was actually typed, instead of
+      // carrying a floating-point artifact like 14999.999999999998.
+      return state.cart.reduce(function (sum, item) { return sum + Math.round(Number(item.price) * Number(item.qty)); }, 0);
     }
 
     // What actually goes to the server: the honest per-line sum, unless the
@@ -67,7 +71,7 @@
       }).join('');
 
       var cartRows = state.cart.map(function (item) {
-        var lineTotal = item.price * item.qty;
+        var lineTotal = Math.round(Number(item.price) * Number(item.qty));
         var priceBlock;
         if (state.editingPriceId === item.id) {
           priceBlock = '<input class="price-edit-input" type="number" inputmode="decimal" id="price-input-' + item.id + '" value="' + lineTotal + '">';
@@ -76,10 +80,13 @@
             (item.qty > 1 ? ' <span style="font-weight:600;">(' + fmtSum(item.price) + '/шт)</span>' : '') +
             (item.priceEdited ? ' <span class="badge-edited">изменено</span>' : '') + '</button>';
         }
+        var catalogEntry = !item.isCustom && state.catalog ? state.catalog.filter(function (c) { return c.name === item.name; })[0] : null;
+        var wouldGoNegative = catalogEntry && (catalogEntry.current - item.qty < 0);
         return '<div class="row">' +
           '<div style="flex:1;min-width:0;">' +
             '<div class="cart-name-line"><span class="row-name">' + escapeHtml(item.name) + '</span>' +
-            (item.isCustom ? '<span class="badge-service">услуга</span>' : '') + '</div>' +
+            (item.isCustom ? '<span class="badge-service">услуга</span>' : '') +
+            (wouldGoNegative ? '<span class="badge-warn">уйдёт в минус</span>' : '') + '</div>' +
             priceBlock +
           '</div>' +
           '<div class="qty-stepper">' +

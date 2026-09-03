@@ -1,6 +1,10 @@
 function computeCartTotal(items) {
   return (items || []).reduce(function (sum, item) {
-    return sum + Number(item.price) * Number(item.qty);
+    // A per-line price can be a repeating fraction (enteredTotal / qty from a
+    // cashier editing a line's total) — round back to the nearest whole unit
+    // before summing so the total matches what was actually typed, instead of
+    // carrying a floating-point artifact like 14999.999999999998.
+    return sum + Math.round(Number(item.price) * Number(item.qty));
   }, 0);
 }
 
@@ -28,7 +32,7 @@ function buildOperationsRow(items, paymentType, totalOverride) {
   const subtotal = computeCartTotal(items);
   const hasOverride = totalOverride !== null && totalOverride !== undefined && totalOverride !== subtotal;
   const lines = (items || []).map(function (item) {
-    return item.name + ' x' + item.qty + ' = ' + (Number(item.price) * Number(item.qty));
+    return item.name + ' x' + item.qty + ' = ' + Math.round(Number(item.price) * Number(item.qty));
   });
   if (hasOverride) {
     lines.push('Итого по позициям: ' + subtotal + ', к оплате: ' + totalOverride);
@@ -46,7 +50,7 @@ function buildTelegramSaleMessage(items, point, paymentType, fmt, totalOverride)
   const subtotal = computeCartTotal(items);
   const hasOverride = totalOverride !== null && totalOverride !== undefined && totalOverride !== subtotal;
   const lines = (items || []).map(function (item) {
-    return '• ' + item.name + ' × ' + item.qty + ' — ' + fmt(Number(item.price) * Number(item.qty));
+    return '• ' + item.name + ' × ' + item.qty + ' — ' + fmt(Math.round(Number(item.price) * Number(item.qty)));
   });
   const msg = '🛍 <b>Продажа</b>\n' + lines.join('\n') + '\n' +
     'Точка: ' + point + '\n' +

@@ -28,6 +28,7 @@ input::placeholder { color: oklch(0.72 0.005 250); }
 .price-btn { border: none; background: transparent; padding: 0; font-size: 12.5px; color: oklch(0.55 0.01 250); font-weight: 600; }
 .badge-service { display: inline-block; padding: 1px 6px; border-radius: 6px; background: oklch(0.93 0.05 280); color: oklch(0.4 0.14 280); font-size: 10.5px; font-weight: 700; text-transform: uppercase; }
 .badge-edited { display: inline-block; padding: 1px 6px; border-radius: 6px; background: oklch(0.93 0.08 60); color: oklch(0.4 0.14 60); font-size: 10.5px; font-weight: 700; }
+.badge-warn { display: inline-block; padding: 1px 6px; border-radius: 6px; background: oklch(0.93 0.06 25); color: oklch(0.4 0.16 25); font-size: 10.5px; font-weight: 700; }
 .qty-stepper { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .qty-btn { width: 30px; height: 30px; border-radius: 8px; border: 1.5px solid oklch(0.88 0.005 250); background: white; font-size: 16px; font-weight: 700; }
 .qty-value { min-width: 18px; text-align: center; font-size: 14px; font-weight: 700; }

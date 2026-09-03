@@ -61,6 +61,18 @@ test('buildOperationsRow: totalOverride equal to the subtotal is treated as no o
   assert.equal(row.note, 'Открытка x2 = 30000');
 });
 
+test('computeCartTotal and buildOperationsRow round a floating-point line total from a price override cleanly', () => {
+  // Cashier edited this line's total to 15000 for 7 units -> price = 15000/7 =
+  // 2142.857142857143, and 2142.857142857143 * 7 = 14999.999999999998 in raw
+  // floating point. Both the summed total and the note must show 15000, not
+  // the floating-point artifact.
+  const items = [{ name: 'Открытка', qty: 7, price: 15000 / 7 }];
+  assert.equal(computeCartTotal(items), 15000);
+  const row = buildOperationsRow(items, 'Наличка');
+  assert.equal(row.amount, 15000);
+  assert.equal(row.note, 'Открытка x7 = 15000');
+});
+
 test('buildTelegramSaleMessage lists every item with its line total, point, payment and grand total', () => {
   const fmt = (n) => Math.round(n).toLocaleString('ru-RU') + ' сум';
   const msg = buildTelegramSaleMessage(
