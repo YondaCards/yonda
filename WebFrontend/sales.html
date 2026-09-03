@@ -16,10 +16,10 @@
     // but the owner asked to drop that distinction entirely: every sale is now
     // just always "Основной склад", with no selection step.
     var SALES_POINT = 'Основной склад';
-    var PAYMENT_TYPES = ['Наличка', 'Paynet', 'Карта (личная)', 'Расчётный счёт ИП'];
     var state = {
       screen: 'catalog',
       catalog: null,
+      paymentTypes: null, // {type, account}[] from "Справочники" (Счета, D:E) — fetched, not hardcoded
       search: '',
       cart: [],
       addingService: false,
@@ -260,15 +260,17 @@
     }
 
     function renderCheckout() {
-      var paymentChips = PAYMENT_TYPES.map(function (p) {
-        return '<button class="chip' + (state.paymentType === p ? ' selected' : '') + '" data-payment="' + escapeAttr(p) + '">' + escapeHtml(p) + '</button>';
-      }).join('');
+      var paymentSection = state.paymentTypes === null
+        ? '<div class="spinner">Загрузка…</div>'
+        : '<div class="chip-row">' + state.paymentTypes.map(function (p) {
+            return '<button class="chip' + (state.paymentType === p.type ? ' selected' : '') + '" data-payment="' + escapeAttr(p.type) + '">' + escapeHtml(p.type) + '</button>';
+          }).join('') + '</div>';
       return '' +
         '<div class="screen">' +
           '<div class="header"><button class="back-btn" id="back-to-catalog">' + backIcon() + '</button><div class="title">Оформление</div></div>' +
           '<div class="list">' +
             '<div style="font-size:13px;font-weight:700;margin:10px 0 8px;">Оплата</div>' +
-            '<div class="chip-row">' + paymentChips + '</div>' +
+            paymentSection +
           '</div>' +
           '<div class="footer">' +
             '<div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;">' +
@@ -325,7 +327,7 @@
     function bindConfirm() {
       document.getElementById('new-sale').onclick = function () {
         var paymentType = state.paymentType;
-        state = { screen: 'catalog', catalog: state.catalog, search: '', cart: [], addingService: false, editingPriceId: null, editingTotal: false, totalOverride: null, paymentType: paymentType, submitting: false, confirm: null };
+        state = { screen: 'catalog', catalog: state.catalog, paymentTypes: state.paymentTypes, search: '', cart: [], addingService: false, editingPriceId: null, editingTotal: false, totalOverride: null, paymentType: paymentType, submitting: false, confirm: null };
         render();
       };
     }
@@ -353,6 +355,7 @@
     function onSignedIn() {
       render();
       apiGet('getSalesCatalog', {}).then(function (items) { state.catalog = items; render(); }).catch(onError);
+      apiGet('getPaymentTypes', {}).then(function (types) { state.paymentTypes = types; render(); }).catch(onError);
     }
 
     renderSignedOut();

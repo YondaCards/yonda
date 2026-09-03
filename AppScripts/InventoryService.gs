@@ -312,6 +312,26 @@ function getSalesCatalog() {
     });
 }
 
+// "Справочники" columns D:E hold the "Счета" table: D = Тип оплаты (shown to
+// the cashier), E = Счёт (the account the money actually lands on in
+// "Операции"). These are deliberately not the same string — the cashier picks
+// by payment type, but the ledger needs the account it maps to.
+function getPaymentTypes() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(SHEET_REFERENCES);
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+  const data = sheet.getRange(2, 4, lastRow - 1, 2).getValues(); // D:E
+  return data
+    .filter(function (row) { return row[0]; })
+    .map(function (row) { return { type: row[0], account: row[1] }; });
+}
+
+function getAccountForPaymentType_(paymentType) {
+  const match = getPaymentTypes().filter(function (p) { return p.type === paymentType; })[0];
+  return match ? match.account : paymentType; // unmapped type: fall back to using it as-is rather than silently dropping the payment
+}
+
 function submitSale(items, point, paymentType, totalOverride) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const stockRows = buildSaleGoodsRows(items);
@@ -319,7 +339,8 @@ function submitSale(items, point, paymentType, totalOverride) {
     appendGoodsRow_(ss, row.name, row.quantity, 'Продажа', 'Основной склад', '');
   });
 
-  const opRow = buildOperationsRow(items, paymentType, totalOverride);
+  const account = getAccountForPaymentType_(paymentType);
+  const opRow = buildOperationsRow(items, account, totalOverride);
   appendIncomeRow_(ss, opRow.amount, opRow.account, opRow.category, opRow.note);
 
   sendTelegram(buildTelegramSaleMessage(items, point, paymentType, fmt, totalOverride));

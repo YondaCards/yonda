@@ -24,6 +24,9 @@ function handleApiGet_(e) {
     if (action === 'getSalesCatalog') {
       return jsonResponse_(getSalesCatalog());
     }
+    if (action === 'getPaymentTypes') {
+      return jsonResponse_(getPaymentTypes());
+    }
     return jsonResponse_({ error: 'Неизвестное действие: ' + action });
   } catch (err) {
     return jsonResponse_({ error: 'Внутренняя ошибка' });
