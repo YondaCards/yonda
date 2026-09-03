@@ -45,12 +45,12 @@ function getProductsSnapshot(location) {
   return items;
 }
 
-function submitInventory(kind, location, counts, newItems) {
+function submitInventory(kind, location, counts, newItems, isSaleReconciliation) {
   const dateStr = Utilities.formatDate(new Date(), 'Asia/Tashkent', 'dd.MM.yyyy');
   const ss = SpreadsheetApp.getActiveSpreadsheet();
 
   if (kind === 'materials') return submitMaterialsInventory_(ss, counts, newItems, dateStr);
-  if (kind === 'products') return submitProductsInventory_(ss, location, counts, newItems, dateStr);
+  if (kind === 'products') return submitProductsInventory_(ss, location, counts, newItems, dateStr, isSaleReconciliation);
   throw new Error('Неизвестный тип инвентаризации: ' + kind);
 }
 
@@ -117,7 +117,7 @@ function appendGoodsRow_(ss, name, quantity, vidDeistviya, from, to) {
   formSheet.appendRow(row);
 }
 
-function submitProductsInventory_(ss, location, counts, newItems, dateStr) {
+function submitProductsInventory_(ss, location, counts, newItems, dateStr, isSaleReconciliation) {
   const stockSheet = ss.getSheetByName(SHEET_GOODS_STOCK);
   const byName = {};
   getProductsSnapshot(location).forEach((it) => { byName[it.name] = it; });
@@ -126,11 +126,16 @@ function submitProductsInventory_(ss, location, counts, newItems, dateStr) {
 
   (counts || []).forEach((c) => {
     const item = byName[c.name];
-    if (!item) return;
+    if (!item) return; // stale client-side data; skip rather than guess
     const delta = computeDelta(item.current, c.fact);
     if (delta === null) return;
-    const row = buildGoodsLedgerRow(delta, location, dateStr);
-    appendGoodsRow_(ss, c.name, row.quantity, 'Инвентаризация', row.from, row.to);
+    const isPostcard = POSTCARD_VARIETY_NAMES.indexOf(c.name) !== -1;
+    const classification = classifyGoodsDelta(delta, isPostcard, !!isSaleReconciliation);
+    const row = buildGoodsLedgerRow(delta, location, dateStr, classification.type);
+    appendGoodsRow_(ss, c.name, row.quantity, classification.type, row.from, row.to);
+    if (classification.mirrorToAggregate) {
+      appendGoodsRow_(ss, POSTCARD_AGGREGATE_NAME, row.quantity, 'Инвентаризация', row.from, row.to);
+    }
     written++;
   });
 
@@ -199,7 +204,68 @@ function testProdazhaLayer2Wiring_() {
   Logger.log('Синтетическая строка записана в "Ответы на форму (1)". Откройте "Реестр товаров": должна появиться строка с Тип="Продажа", Товар="ТЕСТ Реестр Продажа", Откуда="Основной склад", Количество=1. Если строка не появилась или Тип пуст/неверен, расширьте формулу Тип по образцу ветки "Инвентаризация".');
 }
 
-const POSTCARD_VARIETY_NAMES = []; // filled in by Task 6 with the real list of postcard variety names
+const POSTCARD_VARIETY_NAMES = [
+  'Шодлик',
+  'Гурур',
+  'Узбекистан_старый',
+  'Хлопок_тёмно_синий',
+  'Хлопок_без_хлопка',
+  'Хлопок_фиолетовый',
+  'Хлопок_светло_голубой',
+  'Весна_девочка',
+  'Весна_дамас',
+  'Хафиз',
+  '8_марта',
+  "Untranslatable_sho'xgina",
+  'untranslatable_me\'ros',
+  'untranslatable_salobat',
+  'untranslatable_mahalla',
+  'untranslatable_osoyish',
+  'Узбекистан_тюбитейка',
+  'Узбекистан_гранат',
+  'Узбекистан_чорсу',
+  'Узбекистан_пиала',
+  'Узбекистан_хлопок',
+  'Сюзани_Щелчустик',
+  'Сюзани_Варежка',
+  'Сюзани_Лошадка',
+  'Сюзани_Ёлка',
+  'Сюзани_Звёзды',
+  'Сюзани_Конфетки',
+  'Игрушки_сюзане',
+  'Игрушки_хан-атлас',
+  'Игрушки_мозаика',
+  'Игрушки_пахтагуль',
+  'Мараканда',
+  'Котики_Один',
+  'Котики_Повод',
+  'Котики_Еда',
+  'Котики_Чемоданы',
+  'Котики_Победы',
+  'Котики_Рядом',
+  'Стихи_коровка',
+  'Стихи_звезда',
+  'Стихи_тень',
+  'Цветы',
+  'Стикерпак_сюзани',
+  'Стикерпак_игрушки',
+  'тутовник',
+  'ачичук',
+  'курт',
+  'doors',
+  'grow',
+  'Photo&Quote peace',
+  'Photo&Quote beauty',
+  'Photo&Quote time',
+  'Photo&Quote dust',
+  'Фокус на себе',
+  'Photo&Quote 10000',
+  'лисичка с пиалой',
+  'лисичка в пиале',
+  'Photo&Quote match',
+  'стрела',
+];
+const POSTCARD_AGGREGATE_NAME = 'Открытка';
 
 const FORM_COL_SUMMA_DOHOD = 11;       // K: Сумма дохода
 const FORM_COL_TIP_OPLATY_DOHOD = 12;  // L: Тип оплаты
