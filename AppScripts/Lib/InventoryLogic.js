@@ -15,16 +15,27 @@ function buildMaterialLedgerRow(materialName, delta, dateStr) {
   };
 }
 
-function buildGoodsLedgerRow(delta, location, dateStr) {
+function buildGoodsLedgerRow(delta, location, dateStr, type) {
+  const resolvedType = type || 'Инвентаризация';
   return {
-    type: 'Инвентаризация',
+    type: resolvedType,
     from: delta < 0 ? location : '',
     to: delta > 0 ? location : '',
     quantity: Math.abs(delta),
-    note: 'Инвентаризация от ' + dateStr,
+    note: (resolvedType === 'Продажа' ? 'Сверка продаж от ' : 'Инвентаризация от ') + dateStr,
   };
 }
 
+function classifyGoodsDelta(delta, isPostcardVariety, isSaleReconciliation) {
+  if (delta > 0) {
+    return { type: 'Инвентаризация', mirrorToAggregate: !!isPostcardVariety };
+  }
+  if (isPostcardVariety && isSaleReconciliation) {
+    return { type: 'Продажа', mirrorToAggregate: false };
+  }
+  return { type: 'Инвентаризация', mirrorToAggregate: !!isPostcardVariety };
+}
+
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { computeDelta, buildMaterialLedgerRow, buildGoodsLedgerRow };
+  module.exports = { computeDelta, buildMaterialLedgerRow, buildGoodsLedgerRow, classifyGoodsDelta };
 }
