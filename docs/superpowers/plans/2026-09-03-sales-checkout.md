@@ -206,17 +206,23 @@ test('buildOperationsRow uses the payment type directly as the account name', ()
     amount: 30000,
     account: 'Карта (личная)',
     category: 'Продажа товаров',
-    note: 'Открытка x2',
+    note: 'Открытка x2 = 30000',
   });
 });
 
-test('buildOperationsRow lists every item, including services, in the note', () => {
+test('buildOperationsRow lists every item, including services, with qty × price in the note', () => {
   const row = buildOperationsRow([
     { name: 'Открытка', qty: 2, price: 15000 },
     { name: 'Гравировка на заказ', qty: 1, price: 20000, isCustom: true },
   ], 'Наличка');
-  assert.equal(row.note, 'Открытка x2, Гравировка на заказ x1');
+  assert.equal(row.note, 'Открытка x2 = 30000, Гравировка на заказ x1 = 20000');
   assert.equal(row.amount, 50000);
+});
+
+test('buildOperationsRow reflects a manually overridden price in both the note and the total', () => {
+  const row = buildOperationsRow([{ name: 'Открытка', qty: 2, price: 20000 }], 'Наличка'); // catalog price is 15000, cashier overrode it to 20000
+  assert.equal(row.note, 'Открытка x2 = 40000');
+  assert.equal(row.amount, 40000);
 });
 
 test('buildTelegramSaleMessage lists every item with its line total, point, payment and grand total', () => {
@@ -259,12 +265,19 @@ function buildSaleGoodsRows(items) {
 }
 
 function buildOperationsRow(items, paymentType) {
+  // Neither "Реестр товаров" (quantity-only, no price column) nor this row's
+  // own Сумма (one grand total for the whole cart) preserve what a specific
+  // line actually sold for. When a price was overridden per item, the note
+  // is the only place that survives — so it spells out qty × price per line,
+  // not just the name and quantity.
   return {
     type: 'Доход',
     amount: computeCartTotal(items),
     account: paymentType,
     category: 'Продажа товаров',
-    note: (items || []).map(function (item) { return item.name + ' x' + item.qty; }).join(', '),
+    note: (items || []).map(function (item) {
+      return item.name + ' x' + item.qty + ' = ' + (Number(item.price) * Number(item.qty));
+    }).join(', '),
   };
 }
 
@@ -1326,7 +1339,7 @@ Expected: the most recent run's status is `completed`/`success`. If it failed, r
 
 - [ ] **Step 1: Multi-item sale with a manual price override and a free-form service**
 
-On the deployed `sales.html`, add 2+ stock items, override one item's price, add one free-form service, confirm the sale with a real point/payment. Verify: `Ответы на форму (1)` gained one "Продажа" row per stock item (not the service) with `Откуда="Основной склад"`; `Реестр товаров` shows the same rows with `Тип="Продажа"`; `Склад товаров`'s "Основной склад" остаток for each stock item decreased by the sold quantity; one "Доход" row landed with the full cart total (including the service) and the chosen account; the Telegram channel received one message listing every item (including the service) and the correct total.
+On the deployed `sales.html`, add 2+ stock items, override one item's price, add one free-form service, confirm the sale with a real point/payment. For a cart of N stock items + the one service, verify exactly **N + 1** new rows landed in `Ответы на форму (1)`: N rows with `Вид действия="Продажа"` (one per stock item, quantity only — no price, matching how `Реестр товаров`/`Склад товаров` have never carried price for any record type), plus exactly **one** `Тип записи="Доход"` row for the whole cart. The service does **not** get its own goods-movement row — it only exists inside that one Доход row. Verify the Доход row's `Сумма` equals the full cart total including the service and the overridden price, its `Тип оплаты` matches the chosen account, and its `Описание` spells out every line as `name x qty = amount` — including the overridden line showing the overridden amount, not the catalog price — since this note is the only place that per-line detail survives. Verify `Реестр товаров` shows the N stock rows with `Тип="Продажа"`, `Склад товаров`'s "Основной склад" остаток for each stock item decreased by the sold quantity, and the Telegram channel received one message listing every item (including the service, at its actual charged amount) and the correct total.
 
 - [ ] **Step 2: Postcard sale + post-event reconciliation**
 
