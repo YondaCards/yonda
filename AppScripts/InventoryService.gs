@@ -198,3 +198,45 @@ function testProdazhaLayer2Wiring_() {
   appendGoodsRow_(ss, 'ТЕСТ Реестр Продажа', 1, 'Продажа', 'Основной склад', '');
   Logger.log('Синтетическая строка записана в "Ответы на форму (1)". Откройте "Реестр товаров": должна появиться строка с Тип="Продажа", Товар="ТЕСТ Реестр Продажа", Откуда="Основной склад", Количество=1. Если строка не появилась или Тип пуст/неверен, расширьте формулу Тип по образцу ветки "Инвентаризация".');
 }
+
+const POSTCARD_VARIETY_NAMES = []; // filled in by Task 6 with the real list of postcard variety names
+
+const FORM_COL_SUMMA_DOHOD = 11;       // K: Сумма дохода
+const FORM_COL_TIP_OPLATY_DOHOD = 12;  // L: Тип оплаты
+const FORM_COL_KATEGORIYA_DOHOD = 13;  // M: Категория
+const FORM_COL_OPISANIE_DOHOD = 14;    // N: Описание
+
+function appendIncomeRow_(ss, amount, account, category, note) {
+  const formSheet = ss.getSheetByName(SHEET_FORM);
+  const row = [];
+  row[0] = new Date();
+  row[FORM_COL_TIP_ZAPISI - 1] = 'Доход';
+  row[FORM_COL_SUMMA_DOHOD - 1] = amount;
+  row[FORM_COL_TIP_OPLATY_DOHOD - 1] = account;
+  row[FORM_COL_KATEGORIYA_DOHOD - 1] = category;
+  row[FORM_COL_OPISANIE_DOHOD - 1] = note;
+  formSheet.appendRow(row);
+}
+
+function getSalesCatalog() {
+  return getProductsSnapshot('Основной склад')
+    .filter(function (item) { return POSTCARD_VARIETY_NAMES.indexOf(item.name) === -1; })
+    .map(function (item) {
+      return { name: item.name, current: item.current, price: getPriceByProduct(item.name) };
+    });
+}
+
+function submitSale(items, point, paymentType, totalOverride) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const stockRows = buildSaleGoodsRows(items);
+  stockRows.forEach(function (row) {
+    appendGoodsRow_(ss, row.name, row.quantity, 'Продажа', 'Основной склад', '');
+  });
+
+  const opRow = buildOperationsRow(items, paymentType, totalOverride);
+  appendIncomeRow_(ss, opRow.amount, opRow.account, opRow.category, opRow.note);
+
+  sendTelegram(buildTelegramSaleMessage(items, point, paymentType, fmt, totalOverride));
+
+  return { written: stockRows.length, total: opRow.amount };
+}
