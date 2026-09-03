@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Yonda — Продажа</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app"></div>
+  <script src="auth.js"></script>
+  <script src="api.js"></script>
+  <script>
+    var POINTS = ['Основной склад', 'Instagram', 'Teplo Store (TAS)', 'Teplo Store (SKD)', 'Human House', 'UzPost', 'Ethno Gallery', 'Маркеты'];
+    var PAYMENT_TYPES = ['Наличка', 'Paynet', 'Карта (личная)', 'Расчётный счёт ИП'];
+    var state = {
+      screen: 'catalog',
+      catalog: null,
+      search: '',
+      cart: [],
+      addingService: false,
+      editingPriceId: null,
+      editingTotal: false,
+      totalOverride: null,
+      point: null,
+      paymentType: null,
+      submitting: false,
+      confirm: null
+    };
+
+    function render() {
+      var app = document.getElementById('app');
+      if (state.screen === 'catalog') { app.innerHTML = renderCatalog(); bindCatalog(); return; }
+      if (state.screen === 'checkout') { app.innerHTML = renderCheckout(); bindCheckout(); return; }
+      if (state.screen === 'confirm') { app.innerHTML = renderConfirm(); bindConfirm(); return; }
+    }
+
+    function cartTotal() {
+      return state.cart.reduce(function (sum, item) { return sum + Number(item.price) * Number(item.qty); }, 0);
+    }
+
+    // What actually goes to the server: the honest per-line sum, unless the
+    // cashier corrected the whole order's total (see renderTotalRow/bindCatalog) —
+    // in which case that corrected number is used as-is, with no attempt to
+    // redistribute it back across individual lines.
+    function effectiveTotal() {
+      var subtotal = cartTotal();
+      return (state.totalOverride !== null && state.totalOverride !== subtotal) ? state.totalOverride : subtotal;
+    }
+
+    function fmtSum(n) { return Math.round(n).toLocaleString('ru-RU') + ' сум'; }
+
+    function renderCatalog() {
+      if (state.catalog === null) {
+        return '<div class="screen"><div class="header"><div class="title">Продажа</div></div><div class="spinner">Загрузка…</div></div>';
+      }
+      var q = state.search.trim().toLowerCase();
+      var visible = state.catalog.filter(function (item) {
+        return !q || item.name.toLowerCase().indexOf(q) !== -1;
+      });
+      var catalogRows = visible.map(function (item) {
+        return '<button class="row cart-pick" data-add="' + escapeAttr(item.name) + '" data-price="' + escapeAttr(String(item.price || 0)) + '">' +
+          '<div style="flex:1;"><div class="row-name">' + escapeHtml(item.name) + '</div>' +
+          '<div class="row-stock">Остаток: ' + escapeHtml(String(item.current)) + '</div></div>' +
+          '<div style="font-size:14px;font-weight:700;">' + fmtSum(Number(item.price) || 0) + '</div>' +
+        '</button>';
+      }).join('');
+
+      var cartRows = state.cart.map(function (item) {
+        var lineTotal = item.price * item.qty;
+        var priceBlock;
+        if (state.editingPriceId === item.id) {
+          priceBlock = '<input class="price-edit-input" type="number" inputmode="decimal" id="price-input-' + item.id + '" value="' + lineTotal + '">';
+        } else {
+          priceBlock = '<button class="price-btn" data-edit-price="' + item.id + '">' + fmtSum(lineTotal) +
+            (item.qty > 1 ? ' <span style="font-weight:600;">(' + fmtSum(item.price) + '/шт)</span>' : '') +
+            (item.priceEdited ? ' <span class="badge-edited">изменено</span>' : '') + '</button>';
+        }
+        return '<div class="row">' +
+          '<div style="flex:1;min-width:0;">' +
+            '<div class="cart-name-line"><span class="row-name">' + escapeHtml(item.name) + '</span>' +
+            (item.isCustom ? '<span class="badge-service">услуга</span>' : '') + '</div>' +
+            priceBlock +
+          '</div>' +
+          '<div class="qty-stepper">' +
+            '<button class="qty-btn" data-qty-dec="' + item.id + '">−</button>' +
+            '<span class="qty-value">' + item.qty + '</span>' +
+            '<button class="qty-btn" data-qty-inc="' + item.id + '">+</button>' +
+          '</div>' +
+          '<button class="remove-btn" data-remove="' + item.id + '">' + removeIcon() + '</button>' +
+        '</div>';
+      }).join('');
+
+      var serviceForm = state.addingService ? (
+        '<div class="service-form">' +
+          '<div class="service-form-row">' +
+            '<input class="service-input" id="service-name" placeholder="Название услуги">' +
+            '<input class="service-input" id="service-price" placeholder="Сумма" type="number" inputmode="decimal" style="max-width:110px;">' +
+          '</div>' +
+          '<div class="service-form-actions">' +
+            '<button class="btn-ghost" id="service-cancel">Отмена</button>' +
+            '<button class="btn-accent-sm" id="service-save">Добавить</button>' +
+          '</div>' +
+        '</div>'
+      ) : '';
+
+      return '' +
+        '<div class="screen">' +
+          '<div class="header"><div><div class="title">Продажа</div><div class="subtitle">Основной склад</div></div></div>' +
+          '<div style="padding:10px 20px 0;"><input class="name-input" style="width:100%;" type="text" placeholder="Поиск товара" id="search-input" value="' + escapeAttr(state.search) + '"></div>' +
+          '<div class="list" style="flex:0 1 auto;max-height:38vh;">' + (catalogRows || '<div class="spinner">Ничего не найдено</div>') + '</div>' +
+          '<div class="list" style="border-top:1px solid oklch(0.92 0.005 250);">' +
+            cartRows +
+            serviceForm +
+            (!state.addingService ? '<button class="add-row-btn" id="add-service">' + plusIcon() + ' Добавить услугу</button>' : '') +
+          '</div>' +
+          '<div class="footer">' +
+            renderTotalRow() +
+            '<button class="primary-btn" id="go-checkout"' + (state.cart.length === 0 ? ' disabled' : '') + '>Оформить продажу</button>' +
+          '</div>' +
+        '</div>';
+    }
+
+    function renderTotalRow() {
+      var subtotal = cartTotal();
+      var hasOverride = state.totalOverride !== null && state.totalOverride !== subtotal;
+      if (state.editingTotal) {
+        return '<div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;">' +
+          '<div style="font-size:13px;color:oklch(0.55 0.01 250);">Итого</div>' +
+          '<input class="total-edit-input" type="number" inputmode="decimal" id="total-input" value="' + (hasOverride ? state.totalOverride : subtotal) + '">' +
+        '</div>';
+      }
+      return '<div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;">' +
+        '<div style="font-size:13px;color:oklch(0.55 0.01 250);">Итого</div>' +
+        '<div style="display:flex;align-items:baseline;gap:8px;">' +
+          (hasOverride ? '<span style="font-size:12px;font-weight:700;color:oklch(0.55 0.01 250);text-decoration:line-through;">' + fmtSum(subtotal) + '</span>' : '') +
+          '<button class="price-btn" id="edit-total" style="font-size:19px;font-weight:800;color:inherit;">' + fmtSum(hasOverride ? state.totalOverride : subtotal) + '</button>' +
+          (hasOverride ? ' <span class="badge-edited">изменено</span>' : '') +
+        '</div>' +
+      '</div>';
+    }
+
+    function bindCatalog() {
+      var search = document.getElementById('search-input');
+      if (search) search.oninput = function () { state.search = search.value; render(); };
+      document.querySelectorAll('[data-add]').forEach(function (btn) {
+        btn.onclick = function () {
+          var name = btn.getAttribute('data-add');
+          var price = Number(btn.getAttribute('data-price')) || 0;
+          var existing = state.cart.filter(function (i) { return i.name === name && !i.isCustom; })[0];
+          if (existing) { existing.qty += 1; }
+          else { state.cart.push({ id: 'i' + Date.now() + Math.floor(Math.random() * 1000), name: name, qty: 1, price: price, isCustom: false, priceEdited: false }); }
+          render();
+        };
+      });
+      document.querySelectorAll('[data-qty-inc]').forEach(function (btn) {
+        btn.onclick = function () {
+          var id = btn.getAttribute('data-qty-inc');
+          state.cart = state.cart.map(function (i) { return i.id === id ? Object.assign({}, i, { qty: i.qty + 1 }) : i; });
+          render();
+        };
+      });
+      document.querySelectorAll('[data-qty-dec]').forEach(function (btn) {
+        btn.onclick = function () {
+          var id = btn.getAttribute('data-qty-dec');
+          var item = state.cart.filter(function (i) { return i.id === id; })[0];
+          if (item && item.qty <= 1) { state.cart = state.cart.filter(function (i) { return i.id !== id; }); }
+          else { state.cart = state.cart.map(function (i) { return i.id === id ? Object.assign({}, i, { qty: i.qty - 1 }) : i; }); }
+          render();
+        };
+      });
+      document.querySelectorAll('[data-remove]').forEach(function (btn) {
+        btn.onclick = function () {
+          var id = btn.getAttribute('data-remove');
+          state.cart = state.cart.filter(function (i) { return i.id !== id; });
+          render();
+        };
+      });
+      document.querySelectorAll('[data-edit-price]').forEach(function (btn) {
+        btn.onclick = function () {
+          state.editingPriceId = btn.getAttribute('data-edit-price');
+          render();
+          var input = document.getElementById('price-input-' + state.editingPriceId);
+          if (input) { input.focus(); input.select(); }
+        };
+      });
+      var priceInput = document.querySelector('.price-edit-input');
+      if (priceInput) {
+        var commitPrice = function () {
+          var id = state.editingPriceId;
+          var enteredTotal = Number(priceInput.value);
+          if (!isNaN(enteredTotal) && enteredTotal >= 0) {
+            state.cart = state.cart.map(function (i) {
+              if (i.id !== id) return i;
+              // The field edits this line's total, not a per-unit price — store
+              // price as total ÷ qty so cartTotal (Σ price × qty) and the
+              // Операции note (qty × price per line) keep matching what was typed.
+              return Object.assign({}, i, { price: enteredTotal / i.qty, priceEdited: true });
+            });
+          }
+          state.editingPriceId = null;
+          render();
+        };
+        priceInput.onblur = commitPrice;
+        priceInput.onkeydown = function (e) { if (e.key === 'Enter') priceInput.blur(); };
+      }
+
+      var addServiceBtn = document.getElementById('add-service');
+      if (addServiceBtn) addServiceBtn.onclick = function () { state.addingService = true; render(); };
+      var serviceCancel = document.getElementById('service-cancel');
+      if (serviceCancel) serviceCancel.onclick = function () { state.addingService = false; render(); };
+      var serviceSave = document.getElementById('service-save');
+      if (serviceSave) serviceSave.onclick = function () {
+        var name = document.getElementById('service-name').value.trim();
+        var price = Number(document.getElementById('service-price').value);
+        if (!name || isNaN(price) || price < 0) return;
+        state.cart.push({ id: 'c' + Date.now() + Math.floor(Math.random() * 1000), name: name, qty: 1, price: price, isCustom: true, priceEdited: false });
+        state.addingService = false;
+        render();
+      };
+
+      var editTotalBtn = document.getElementById('edit-total');
+      if (editTotalBtn) editTotalBtn.onclick = function () {
+        state.editingTotal = true;
+        render();
+        var el = document.getElementById('total-input');
+        if (el) { el.focus(); el.select(); }
+      };
+      var totalInput = document.getElementById('total-input');
+      if (totalInput) {
+        var commitTotal = function () {
+          var num = Number(totalInput.value);
+          var subtotal = cartTotal();
+          if (!isNaN(num) && num >= 0) {
+            state.totalOverride = (num === subtotal) ? null : num;
+          }
+          state.editingTotal = false;
+          render();
+        };
+        totalInput.onblur = commitTotal;
+        totalInput.onkeydown = function (e) { if (e.key === 'Enter') totalInput.blur(); };
+      }
+
+      var goCheckout = document.getElementById('go-checkout');
+      if (goCheckout) goCheckout.onclick = function () {
+        if (state.cart.length === 0) return;
+        state.screen = 'checkout';
+        render();
+      };
+    }
+
+    function renderCheckout() {
+      var pointChips = POINTS.map(function (p) {
+        return '<button class="chip' + (state.point === p ? ' selected' : '') + '" data-point="' + escapeAttr(p) + '">' + escapeHtml(p) + '</button>';
+      }).join('');
+      var paymentChips = PAYMENT_TYPES.map(function (p) {
+        return '<button class="chip' + (state.paymentType === p ? ' selected' : '') + '" data-payment="' + escapeAttr(p) + '">' + escapeHtml(p) + '</button>';
+      }).join('');
+      return '' +
+        '<div class="screen">' +
+          '<div class="header"><button class="back-btn" id="back-to-catalog">' + backIcon() + '</button><div class="title">Оформление</div></div>' +
+          '<div class="list">' +
+            '<div style="font-size:13px;font-weight:700;margin:10px 0 8px;">Точка / канал</div>' +
+            '<div class="chip-row">' + pointChips + '</div>' +
+            '<div style="font-size:13px;font-weight:700;margin:18px 0 8px;">Оплата</div>' +
+            '<div class="chip-row">' + paymentChips + '</div>' +
+          '</div>' +
+          '<div class="footer">' +
+            '<div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;">' +
+              '<div style="font-size:13px;color:oklch(0.55 0.01 250);">К оплате</div>' +
+              '<div style="font-size:19px;font-weight:800;">' + fmtSum(effectiveTotal()) + '</div>' +
+            '</div>' +
+            '<button class="primary-btn" id="confirm-sale"' + (!state.point || !state.paymentType || state.submitting ? ' disabled' : '') + '>' + (state.submitting ? 'Оформляем…' : 'Подтвердить') + '</button>' +
+          '</div>' +
+        '</div>';
+    }
+
+    function bindCheckout() {
+      document.getElementById('back-to-catalog').onclick = function () { state.screen = 'catalog'; render(); };
+      document.querySelectorAll('[data-point]').forEach(function (btn) {
+        btn.onclick = function () { state.point = btn.getAttribute('data-point'); render(); };
+      });
+      document.querySelectorAll('[data-payment]').forEach(function (btn) {
+        btn.onclick = function () { state.paymentType = btn.getAttribute('data-payment'); render(); };
+      });
+      var confirmBtn = document.getElementById('confirm-sale');
+      if (confirmBtn) confirmBtn.onclick = onConfirmSale;
+    }
+
+    function onConfirmSale() {
+      if (!state.point || !state.paymentType || state.submitting) return;
+      state.submitting = true;
+      render();
+      var total = effectiveTotal();
+      var itemsLabel = state.cart.map(function (i) { return i.name + ' ×' + i.qty; }).join(', ');
+      apiPost('submitSale', { items: state.cart, point: state.point, paymentType: state.paymentType, totalOverride: state.totalOverride })
+        .then(function () {
+          state.confirm = { total: total, itemsLabel: itemsLabel };
+          state.submitting = false;
+          state.screen = 'confirm';
+          render();
+        })
+        .catch(function (err) {
+          state.submitting = false;
+          render();
+          onError(err);
+        });
+    }
+
+    function renderConfirm() {
+      return '' +
+        '<div class="screen">' +
+          '<div style="display:flex;flex-direction:column;align-items:center;gap:10px;padding:40px 20px 22px;">' +
+            '<div style="width:52px;height:52px;border-radius:50%;background:oklch(0.93 0.05 145);display:flex;align-items:center;justify-content:center;">' + checkIcon() + '</div>' +
+            '<div style="font-size:18px;font-weight:800;">Продажа оформлена</div>' +
+            '<div style="font-size:22px;font-weight:800;">' + fmtSum(state.confirm.total) + '</div>' +
+            '<div style="font-size:13px;color:oklch(0.55 0.01 250);text-align:center;">' + escapeHtml(state.confirm.itemsLabel) + '</div>' +
+          '</div>' +
+          '<div class="footer" style="border-top:none;"><button class="dark-btn" id="new-sale">Новая продажа</button></div>' +
+        '</div>';
+    }
+
+    function bindConfirm() {
+      document.getElementById('new-sale').onclick = function () {
+        var point = state.point, paymentType = state.paymentType;
+        state = { screen: 'catalog', catalog: state.catalog, search: '', cart: [], addingService: false, editingPriceId: null, editingTotal: false, totalOverride: null, point: point, paymentType: paymentType, submitting: false, confirm: null };
+        render();
+      };
+    }
+
+    function onError(err) {
+      if (isTokenAuthError(err)) {
+        alert('Сессия истекла — войдите заново. Введённые данные будут потеряны.');
+        signOut();
+        return;
+      }
+      alert('Ошибка: ' + (err && err.message ? err.message : err));
+    }
+
+    function escapeHtml(s) { return String(s).replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); }
+    function escapeAttr(s) { return escapeHtml(s).replace(/"/g, '&quot;'); }
+    function backIcon() { return '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6l-6 6 6 6"></path></svg>'; }
+    function plusIcon() { return '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"></path></svg>'; }
+    function removeIcon() { return '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="oklch(0.55 0.18 25)" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"></path></svg>'; }
+    function checkIcon() { return '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="oklch(0.4 0.14 145)" stroke-width="2.4"><path d="M5 13l4 4L19 7"></path></svg>'; }
+
+    function renderSignedOut() {
+      document.getElementById('app').innerHTML = '<div class="signin-wrap"><div style="font-size:16px;font-weight:700;">Войдите, чтобы продолжить</div><div id="signin-button"></div></div>';
+    }
+
+    function onSignedIn() {
+      render();
+      apiGet('getSalesCatalog', {}).then(function (items) { state.catalog = items; render(); }).catch(onError);
+    }
+
+    renderSignedOut();
+  </script>
+  <script src="https://accounts.google.com/gsi/client" async onload="initAuth(onSignedIn)"></script>
+</body>
+</html>
