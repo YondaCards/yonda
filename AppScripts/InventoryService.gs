@@ -97,6 +97,26 @@ function submitMaterialsInventory_(ss, counts, newItems, dateStr) {
   return { written: written };
 }
 
+const FORM_COL_TIP_ZAPISI = 2;                  // B: Тип записи
+const FORM_COL_VID_DEISTVIYA = 20;              // T: Вид действия
+const FORM_COL_TOVAR_PEREMESCHENIE = 25;        // Y: Товар (перемещение)
+const FORM_COL_KOLICHESTVO_PEREMESCHENIE = 26;  // Z: Количество (перемещение)
+const FORM_COL_OTKUDA = 27;                     // AA: Откуда
+const FORM_COL_KUDA = 28;                       // AB: Куда
+
+function appendGoodsRow_(ss, name, quantity, vidDeistviya, from, to) {
+  const formSheet = ss.getSheetByName(SHEET_FORM);
+  const row = [];
+  row[0] = new Date(); // A: Отметка времени
+  row[FORM_COL_TIP_ZAPISI - 1] = 'Учет товаров';
+  row[FORM_COL_VID_DEISTVIYA - 1] = vidDeistviya;
+  row[FORM_COL_TOVAR_PEREMESCHENIE - 1] = name;
+  row[FORM_COL_KOLICHESTVO_PEREMESCHENIE - 1] = quantity;
+  row[FORM_COL_OTKUDA - 1] = from;
+  row[FORM_COL_KUDA - 1] = to;
+  formSheet.appendRow(row);
+}
+
 function submitProductsInventory_(ss, location, counts, newItems, dateStr) {
   const stockSheet = ss.getSheetByName(SHEET_GOODS_STOCK);
   const byName = {};
@@ -104,33 +124,13 @@ function submitProductsInventory_(ss, location, counts, newItems, dateStr) {
 
   let written = 0;
 
-  function appendGoodsRow(name, quantity, from, to) {
-    const formSheet = ss.getSheetByName(SHEET_FORM);
-    const FORM_COL_TIP_ZAPISI = 2;                  // B: Тип записи
-    const FORM_COL_VID_DEISTVIYA = 20;              // T: Вид действия
-    const FORM_COL_TOVAR_PEREMESCHENIE = 25;        // Y: Товар (перемещение)
-    const FORM_COL_KOLICHESTVO_PEREMESCHENIE = 26;  // Z: Количество (перемещение)
-    const FORM_COL_OTKUDA = 27;                     // AA: Откуда
-    const FORM_COL_KUDA = 28;                       // AB: Куда
-
-    const row = [];
-    row[0] = new Date(); // A: Отметка времени
-    row[FORM_COL_TIP_ZAPISI - 1] = 'Учет товаров';
-    row[FORM_COL_VID_DEISTVIYA - 1] = 'Инвентаризация';
-    row[FORM_COL_TOVAR_PEREMESCHENIE - 1] = name;
-    row[FORM_COL_KOLICHESTVO_PEREMESCHENIE - 1] = quantity;
-    row[FORM_COL_OTKUDA - 1] = from;
-    row[FORM_COL_KUDA - 1] = to;
-    formSheet.appendRow(row);
-  }
-
   (counts || []).forEach((c) => {
     const item = byName[c.name];
     if (!item) return;
     const delta = computeDelta(item.current, c.fact);
     if (delta === null) return;
     const row = buildGoodsLedgerRow(delta, location, dateStr);
-    appendGoodsRow(c.name, row.quantity, row.from, row.to);
+    appendGoodsRow_(ss, c.name, row.quantity, 'Инвентаризация', row.from, row.to);
     written++;
   });
 
@@ -141,7 +141,7 @@ function submitProductsInventory_(ss, location, counts, newItems, dateStr) {
       const delta = computeDelta(byName[name].current, ni.fact);
       if (delta === null) return;
       const row = buildGoodsLedgerRow(delta, location, dateStr);
-      appendGoodsRow(name, row.quantity, row.from, row.to);
+      appendGoodsRow_(ss, name, row.quantity, 'Инвентаризация', row.from, row.to);
       written++;
       return;
     }
@@ -171,7 +171,7 @@ function submitProductsInventory_(ss, location, counts, newItems, dateStr) {
     const stockCopyWidth = stockTotalColIndex > 0 ? stockTotalColIndex - 1 : stockLastCol - 1; // through Итого inclusive (B..Итого), or to the sheet's last column if Итого is absent
     stockSheet.getRange(2, 2, 1, stockCopyWidth).copyTo(stockSheet.getRange(newRow, 2, 1, stockCopyWidth)); // B..Итого: formulas
     const row = buildGoodsLedgerRow(factNum, location, dateStr);
-    appendGoodsRow(name, row.quantity, row.from, row.to);
+    appendGoodsRow_(ss, name, row.quantity, 'Инвентаризация', row.from, row.to);
     written++;
   });
 
@@ -186,4 +186,15 @@ function findLastNonEmptyRow_(sheet, col) {
     if (values[i][0] !== '' && values[i][0] !== null) return i + 1; // 1-based row
   }
   return 0;
+}
+
+// Temporary — run once by hand from the Apps Script editor to verify Layer 2
+// recognizes "Продажа" the same way it already recognizes "Инвентаризация".
+// Delete the synthetic row from "Ответы на форму (1)" (and, if it appears,
+// from "Реестр товаров") after verifying. Safe to leave the function itself
+// in the codebase as a reusable diagnostic.
+function testProdazhaLayer2Wiring_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  appendGoodsRow_(ss, 'ТЕСТ Реестр Продажа', 1, 'Продажа', 'Основной склад', '');
+  Logger.log('Синтетическая строка записана в "Ответы на форму (1)". Откройте "Реестр товаров": должна появиться строка с Тип="Продажа", Товар="ТЕСТ Реестр Продажа", Откуда="Основной склад", Количество=1. Если строка не появилась или Тип пуст/неверен, расширьте формулу Тип по образцу ветки "Инвентаризация".');
 }
