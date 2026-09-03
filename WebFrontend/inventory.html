@@ -11,7 +11,7 @@
   <script src="auth.js"></script>
   <script src="api.js"></script>
   <script>
-    var state = { screen: 'type', type: null, location: null, locations: null, items: null, facts: {}, customItems: [], changes: [], written: 0 };
+    var state = { screen: 'type', type: null, location: null, locations: null, items: null, facts: {}, customItems: [], changes: [], written: 0, isSaleReconciliation: false };
 
     function render() {
       var app = document.getElementById('app');
@@ -94,10 +94,14 @@
           '<button class="remove-btn" data-remove-custom="' + ci.id + '">' + removeIcon() + '</button></div>';
       });
       var subtitle = state.type === 'materials' ? 'Основной склад' : state.location;
+      var reconciliationToggle = state.type === 'products' ?
+        '<div class="toggle-row" style="padding:10px 20px 0;"><label style="font-size:13.5px;font-weight:600;">Это сверка продаж</label>' +
+        '<input type="checkbox" id="sale-reconciliation-toggle"' + (state.isSaleReconciliation ? ' checked' : '') + '></div>' : '';
       return '' +
         '<div class="screen">' +
           '<div class="header"><button class="back-btn" id="back-from-counting">' + backIcon() + '</button>' +
           '<div><div class="title">' + (state.type === 'materials' ? 'Материалы' : 'Товары') + '</div><div class="subtitle">' + escapeHtml(subtitle) + '</div></div></div>' +
+          reconciliationToggle +
           '<div class="list">' + rows + '<button class="add-row-btn" id="add-custom">' + plusIcon() + ' Добавить позицию</button></div>' +
           '<div class="footer"><button class="primary-btn" id="save-counts">Сохранить</button></div>' +
         '</div>';
@@ -137,6 +141,8 @@
         state.customItems.push({ id: 'c' + Date.now() + Math.floor(Math.random() * 1000), name: '', fact: '' });
         render();
       };
+      var reconciliationToggle = document.getElementById('sale-reconciliation-toggle');
+      if (reconciliationToggle) reconciliationToggle.onchange = function () { state.isSaleReconciliation = reconciliationToggle.checked; };
       document.getElementById('save-counts').onclick = onSave;
     }
 
@@ -167,7 +173,7 @@
       var btn = document.getElementById('save-counts');
       btn.setAttribute('disabled', 'true');
       btn.textContent = 'Сохраняем…';
-      apiPost('submitInventory', { kind: state.type, location: state.location, counts: counts, newItems: newItems })
+      apiPost('submitInventory', { kind: state.type, location: state.location, counts: counts, newItems: newItems, isSaleReconciliation: state.isSaleReconciliation })
         .then(function (result) {
           state.written = result && typeof result.written === 'number' ? result.written : state.changes.length;
           state.screen = 'confirm'; render();
