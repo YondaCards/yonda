@@ -198,7 +198,10 @@ function findLastNonEmptyRow_(sheet, col) {
 // Delete the synthetic row from "Ответы на форму (1)" (and, if it appears,
 // from "Реестр товаров") after verifying. Safe to leave the function itself
 // in the codebase as a reusable diagnostic.
-function testProdazhaLayer2Wiring_() {
+// No trailing underscore (unlike appendGoodsRow_ etc.) — Apps Script hides
+// underscore-suffixed functions from the editor's "Select function" dropdown,
+// and this one needs to be runnable from there.
+function testProdazhaLayer2Wiring() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   appendGoodsRow_(ss, 'ТЕСТ Реестр Продажа', 1, 'Продажа', 'Основной склад', '');
   Logger.log('Синтетическая строка записана в "Ответы на форму (1)". Откройте "Реестр товаров": должна появиться строка с Тип="Продажа", Товар="ТЕСТ Реестр Продажа", Откуда="Основной склад", Количество=1. Если строка не появилась или Тип пуст/неверен, расширьте формулу Тип по образцу ветки "Инвентаризация".');
@@ -210,7 +213,8 @@ function testProdazhaLayer2Wiring_() {
 // vs. a Unicode modifier letter in an Uzbek word) would otherwise fail two
 // ways at once: that variety stays sellable as itself in the sales catalog,
 // and never gets recognized during postcard reconciliation.
-function testPostcardVarietyNamesMatchCatalog_() {
+// No trailing underscore — see testProdazhaLayer2Wiring's comment above.
+function testPostcardVarietyNamesMatchCatalog() {
   const catalogNames = getProductsSnapshot('Основной склад').map(function (item) { return item.name; });
   const missing = POSTCARD_VARIETY_NAMES.filter(function (name) { return catalogNames.indexOf(name) === -1; });
   if (missing.length === 0) {
