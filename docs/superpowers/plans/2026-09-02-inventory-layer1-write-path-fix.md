@@ -384,3 +384,83 @@ git commit -m "docs: add Production Hand-Off section"
 ```
 
 - [ ] **Step 8: Report DONE**
+
+---
+
+## Production Hand-Off
+
+This plan was built and verified against the sandbox Google Sheet/Apps
+Script project. Live verification (Task 3) surfaced two real bugs
+beyond what this plan originally anticipated — both must be handled
+when applying these changes to production, not just the six formula
+edits and the code change:
+
+1. **Copy the code**, using `git show` on this plan's commits as the
+   reference: `AppScripts/InventoryService.gs`'s rewritten
+   `submitProductsInventory_`/`appendGoodsRow`.
+
+2. **Paste the six formula changes** into production's own `Реестр
+   товаров` — same process as Task 2 here: the owner edits them by hand
+   in the Sheets UI, never via script. Confirm production's `Реестр
+   товаров` already has the same `Продажа`/`Пополнение`/`Перемещение`
+   formula structure this plan assumed for the sandbox before assuming
+   the blocks apply unmodified — if production's formulas differ in any
+   way (different named ranges, different row structure), adapt the new
+   branch to match production's actual structure rather than
+   copy-pasting blindly.
+
+3. **Apply the off-by-one fix in the same three formulas** (Откуда,
+   Куда, Примечание) — inside every `ИНДЕКС(Form_Responses[...];z)`
+   call, use `z-1` instead of `z`. This bug predates this plan (it was
+   already present in production's live `Перемещение` branch, the same
+   way it was in the sandbox) — `z` is 1-based against
+   `'Ответы на форму (1)'!AC:AC` *including* the header row, but
+   `Form_Responses[...]` structured Table references are always
+   header-exclusive, so every such `ИНДЕКС` call has been silently
+   reading one row too far. It only surfaces as a visible `#ЗНАЧ!`
+   error on the newest/last row (index runs past the end of the Table);
+   for every other row it silently returns the *next* row's value
+   instead of its own. **Before applying this fix to production, warn
+   the owner explicitly**: it will change the displayed
+   Откуда/Куда/Примечание values for existing `Перемещение` and
+   `Пополнение` rows sheet-wide (correcting them), which can shift
+   downstream Layer 3 figures (`Склад товаров`, `P&L`) that depend on
+   those columns. This is a correctness fix, not a regression, but it
+   is not a no-op the way "add one new branch" normally would be — get
+   explicit confirmation before pasting, the same way the sandbox owner
+   confirmed it here.
+
+4. **Confirm production's `Склад товаров`** already recognizes
+   `"Инвентаризация"` as a `Тип` value (per the earlier plan that added
+   this) — if production never got that update, do it first (see that
+   plan's own hand-off notes).
+
+5. **Push AND redeploy — `clasp push` alone is not enough.** `clasp
+   push` only updates the Apps Script project's HEAD source; it does
+   **not** update an already-published, version-pinned Web App
+   deployment. Find which deployment id production's front end
+   actually calls (check `WebFrontend/api.js`'s `API_BASE_URL` for
+   production, or wherever production's equivalent is configured), run
+   `clasp deployments` to see what version that id is currently pinned
+   to, then run
+   `clasp deploy --deploymentId <that id> --description "<what changed>"`
+   to point it at a new version containing this plan's code. Only
+   *then* independently verify by fetching that new version's content
+   via the Apps Script API (same check as Task 1's Step 3: confirm
+   `SHEET_FORM` present, no direct `SHEET_GOODS_REGISTRY` ledger write,
+   no `ё`-typo) — verifying the HEAD source alone is not sufficient
+   evidence that the live Web App is running the new code, since that's
+   exactly how this bug reached the sandbox during Task 3.
+
+6. **Verify**: repeat Task 3's Steps 1-5 against production, with the
+   owner. One expectation correction versus the plan's original Step 5
+   wording: `onEditProduction` (an installable `onEdit` trigger scoped
+   to the whole spreadsheet, `AppScripts/ProductionHandler.js:155-158`)
+   *will* appear in the Executions log for a stocktake submission —
+   that's normal Apps Script behavior for a whole-spreadsheet `onEdit`
+   trigger reacting to the new `appendRow` on `Ответы на форму (1)`.
+   What actually matters is that its execution completes quickly with
+   no errors and no logs (confirming it hit the early
+   `sheet.getName() !== SHEET_GOODS_REGISTRY` return in
+   `ProductionHandler.js:40` and never reached `writeOffMaterials`) —
+   verify that, not that the trigger didn't fire at all.
