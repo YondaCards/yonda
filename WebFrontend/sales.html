@@ -11,7 +11,11 @@
   <script src="auth.js"></script>
   <script src="api.js"></script>
   <script>
-    var POINTS = ['Основной склад', 'Instagram', 'Teplo Store (TAS)', 'Teplo Store (SKD)', 'Human House', 'UzPost', 'Ethno Gallery', 'Маркеты'];
+    // Stock always writes off from "Основной склад" — the point/channel a sale
+    // physically happens at was previously a separate, user-picked attribute,
+    // but the owner asked to drop that distinction entirely: every sale is now
+    // just always "Основной склад", with no selection step.
+    var SALES_POINT = 'Основной склад';
     var PAYMENT_TYPES = ['Наличка', 'Paynet', 'Карта (личная)', 'Расчётный счёт ИП'];
     var state = {
       screen: 'catalog',
@@ -22,7 +26,6 @@
       editingPriceId: null,
       editingTotal: false,
       totalOverride: null,
-      point: null,
       paymentType: null,
       submitting: false,
       confirm: null
@@ -257,9 +260,6 @@
     }
 
     function renderCheckout() {
-      var pointChips = POINTS.map(function (p) {
-        return '<button class="chip' + (state.point === p ? ' selected' : '') + '" data-point="' + escapeAttr(p) + '">' + escapeHtml(p) + '</button>';
-      }).join('');
       var paymentChips = PAYMENT_TYPES.map(function (p) {
         return '<button class="chip' + (state.paymentType === p ? ' selected' : '') + '" data-payment="' + escapeAttr(p) + '">' + escapeHtml(p) + '</button>';
       }).join('');
@@ -267,9 +267,7 @@
         '<div class="screen">' +
           '<div class="header"><button class="back-btn" id="back-to-catalog">' + backIcon() + '</button><div class="title">Оформление</div></div>' +
           '<div class="list">' +
-            '<div style="font-size:13px;font-weight:700;margin:10px 0 8px;">Точка / канал</div>' +
-            '<div class="chip-row">' + pointChips + '</div>' +
-            '<div style="font-size:13px;font-weight:700;margin:18px 0 8px;">Оплата</div>' +
+            '<div style="font-size:13px;font-weight:700;margin:10px 0 8px;">Оплата</div>' +
             '<div class="chip-row">' + paymentChips + '</div>' +
           '</div>' +
           '<div class="footer">' +
@@ -277,16 +275,13 @@
               '<div style="font-size:13px;color:oklch(0.55 0.01 250);">К оплате</div>' +
               '<div style="font-size:19px;font-weight:800;">' + fmtSum(effectiveTotal()) + '</div>' +
             '</div>' +
-            '<button class="primary-btn" id="confirm-sale"' + (!state.point || !state.paymentType || state.submitting ? ' disabled' : '') + '>' + (state.submitting ? 'Оформляем…' : 'Подтвердить') + '</button>' +
+            '<button class="primary-btn" id="confirm-sale"' + (!state.paymentType || state.submitting ? ' disabled' : '') + '>' + (state.submitting ? 'Оформляем…' : 'Подтвердить') + '</button>' +
           '</div>' +
         '</div>';
     }
 
     function bindCheckout() {
       document.getElementById('back-to-catalog').onclick = function () { state.screen = 'catalog'; render(); };
-      document.querySelectorAll('[data-point]').forEach(function (btn) {
-        btn.onclick = function () { state.point = btn.getAttribute('data-point'); render(); };
-      });
       document.querySelectorAll('[data-payment]').forEach(function (btn) {
         btn.onclick = function () { state.paymentType = btn.getAttribute('data-payment'); render(); };
       });
@@ -295,12 +290,12 @@
     }
 
     function onConfirmSale() {
-      if (!state.point || !state.paymentType || state.submitting) return;
+      if (!state.paymentType || state.submitting) return;
       state.submitting = true;
       render();
       var total = effectiveTotal();
       var itemsLabel = state.cart.map(function (i) { return i.name + ' ×' + i.qty; }).join(', ');
-      apiPost('submitSale', { items: state.cart, point: state.point, paymentType: state.paymentType, totalOverride: state.totalOverride })
+      apiPost('submitSale', { items: state.cart, point: SALES_POINT, paymentType: state.paymentType, totalOverride: state.totalOverride })
         .then(function () {
           state.confirm = { total: total, itemsLabel: itemsLabel };
           state.submitting = false;
@@ -329,8 +324,8 @@
 
     function bindConfirm() {
       document.getElementById('new-sale').onclick = function () {
-        var point = state.point, paymentType = state.paymentType;
-        state = { screen: 'catalog', catalog: state.catalog, search: '', cart: [], addingService: false, editingPriceId: null, editingTotal: false, totalOverride: null, point: point, paymentType: paymentType, submitting: false, confirm: null };
+        var paymentType = state.paymentType;
+        state = { screen: 'catalog', catalog: state.catalog, search: '', cart: [], addingService: false, editingPriceId: null, editingTotal: false, totalOverride: null, paymentType: paymentType, submitting: false, confirm: null };
         render();
       };
     }
