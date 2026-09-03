@@ -20,6 +20,9 @@
 - `clasp push` has previously reported success without the content reaching the server in this project — every push must be independently verified via the Apps Script API content endpoint before being trusted.
 - `clasp push` alone does **not** update the already-published, version-pinned Web App deployment that `WebFrontend/api.js`'s `API_BASE_URL` calls — a real redeploy needs `clasp deploy --deploymentId <id>`.
 - Stock write-off for every sale always targets `"Основной склад"`, regardless of the sales point/channel chosen at checkout — the point/channel is only an attribute of the "Операции" income row and the Telegram message.
+- The one "Доход" row and the N "Продажа" goods-movement rows written per sale carry **no shared reference to each other** (no common order id) — confirmed by the owner as the intended design, not an oversight to fix.
+- A cashier can correct a cart's final total in one number at checkout (a whole-order discount) without redistributing it across lines — `buildOperationsRow`/`buildTelegramSaleMessage`'s `totalOverride` parameter and `sales.html`'s "Итого" field. This is separate from, and composes with, editing a single line's own total.
+- The "номер заказа" the owner expects on the Доход row is presumed to be the existing `ID` column already on `Операции` (parallel to `Реестр товаров`'s own `# ID`), populated by that sheet's own formula, not written by this plan's code — confirm this against the live sheet in Task 13, Step 1, and correct this assumption here if it's wrong.
 - Payment types are the four account names already used system-wide (`Наличка`, `Paynet`, `Карта (личная)`, `Расчётный счёт ИП`, see `accountIcons` in `AppScripts/Уведомления через ТГ-бот.js`) — no separate payment→account mapping table.
 - `.clasp.json` lives at the repo root (`Yonda/`) — `clasp push`/`clasp deploy` run from there, not from `AppScripts/`.
 
@@ -171,8 +174,9 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 - Create: `AppScripts/Lib/SalesLogic.test.js`
 
 **Interfaces:**
-- Produces: `computeCartTotal(items)`, `buildSaleGoodsRows(items)`, `buildOperationsRow(items, paymentType)`, `buildTelegramSaleMessage(items, point, paymentType, fmt)`.
+- Produces: `computeCartTotal(items)`, `buildSaleGoodsRows(items)`, `buildOperationsRow(items, paymentType, totalOverride)`, `buildTelegramSaleMessage(items, point, paymentType, fmt, totalOverride)`.
 - Cart item shape consumed throughout: `{ name: string, qty: number, price: number, isCustom: boolean }`.
+- `totalOverride` (both functions, optional — pass `null`/`undefined` when absent): the cashier can correct the whole cart's final total in one number (a round-number discount, decided per order) without touching any line's own price. Per-line prices, `buildSaleGoodsRows`'s quantities, and the audit note's per-line breakdown are **never** redistributed to match it — only `amount`/`Итого` changes, and the note gets one explanatory clause appended so it doesn't silently stop adding up to its own header. Income and goods write-off rows carry no shared id linking them (see Global Constraints) — this is the only place the "final charged total differs from the line subtotal" fact is recorded at all.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -219,10 +223,27 @@ test('buildOperationsRow lists every item, including services, with qty × price
   assert.equal(row.amount, 50000);
 });
 
-test('buildOperationsRow reflects a manually overridden price in both the note and the total', () => {
-  const row = buildOperationsRow([{ name: 'Открытка', qty: 2, price: 20000 }], 'Наличка'); // catalog price is 15000, cashier overrode it to 20000
+test('buildOperationsRow reflects a manually overridden line price in both the note and the total', () => {
+  const row = buildOperationsRow([{ name: 'Открытка', qty: 2, price: 20000 }], 'Наличка'); // catalog price is 15000, cashier overrode this line's total to 40000 (20000/unit)
   assert.equal(row.note, 'Открытка x2 = 40000');
   assert.equal(row.amount, 40000);
+});
+
+test('buildOperationsRow: whole-cart totalOverride replaces amount without touching any line', () => {
+  const items = [
+    { name: 'Открытка', qty: 5, price: 25000 },       // 125000
+    { name: 'Фотоальбом «Мгновения»', qty: 1, price: 75000 }, // 75000
+    { name: 'Гравировка на заказ', qty: 1, price: 125000, isCustom: true }, // 125000
+  ]; // subtotal 325000, cashier corrects it to 300000 for the whole order
+  const row = buildOperationsRow(items, 'Наличка', 300000);
+  assert.equal(row.amount, 300000);
+  assert.equal(row.note, 'Открытка x5 = 125000, Фотоальбом «Мгновения» x1 = 75000, Гравировка на заказ x1 = 125000, Итого по позициям: 325000, к оплате: 300000');
+});
+
+test('buildOperationsRow: totalOverride equal to the subtotal is treated as no override', () => {
+  const row = buildOperationsRow([{ name: 'Открытка', qty: 2, price: 15000 }], 'Наличка', 30000);
+  assert.equal(row.amount, 30000);
+  assert.equal(row.note, 'Открытка x2 = 30000');
 });
 
 test('buildTelegramSaleMessage lists every item with its line total, point, payment and grand total', () => {
@@ -237,6 +258,18 @@ test('buildTelegramSaleMessage lists every item with its line total, point, paym
   assert.match(msg, /Точка: Маркеты/);
   assert.match(msg, /Оплата: Наличка/);
   assert.match(msg, /Итого: 30 000 сум/);
+});
+
+test('buildTelegramSaleMessage shows the corrected total when the whole cart was overridden', () => {
+  const fmt = (n) => Math.round(n).toLocaleString('ru-RU') + ' сум';
+  const msg = buildTelegramSaleMessage(
+    [{ name: 'Открытка', qty: 2, price: 15000 }],
+    'Маркеты',
+    'Наличка',
+    fmt,
+    25000
+  );
+  assert.match(msg, /Итого: 25 000 сум/);
 });
 ```
 
@@ -264,31 +297,46 @@ function buildSaleGoodsRows(items) {
     });
 }
 
-function buildOperationsRow(items, paymentType) {
+function buildOperationsRow(items, paymentType, totalOverride) {
   // Neither "Реестр товаров" (quantity-only, no price column) nor this row's
   // own Сумма (one grand total for the whole cart) preserve what a specific
-  // line actually sold for. When a price was overridden per item, the note
-  // is the only place that survives — so it spells out qty × price per line,
-  // not just the name and quantity.
+  // line actually sold for. The note spells out qty × price per line — the
+  // only place a per-line price override survives.
+  //
+  // totalOverride lets the cashier correct the whole order's final total
+  // (e.g. a round-number discount) without redistributing it back across
+  // lines — deliberately: proportionally rescaling every line raises more
+  // questions (does it touch services too? how does it round?) than it's
+  // worth when the goods-movement rows only ever cared about quantity
+  // anyway. When it's used, the note gets one appended clause so it still
+  // explains itself instead of silently disagreeing with its own header.
+  const subtotal = computeCartTotal(items);
+  const hasOverride = totalOverride !== null && totalOverride !== undefined && totalOverride !== subtotal;
+  const lines = (items || []).map(function (item) {
+    return item.name + ' x' + item.qty + ' = ' + (Number(item.price) * Number(item.qty));
+  });
+  if (hasOverride) {
+    lines.push('Итого по позициям: ' + subtotal + ', к оплате: ' + totalOverride);
+  }
   return {
     type: 'Доход',
-    amount: computeCartTotal(items),
+    amount: hasOverride ? totalOverride : subtotal,
     account: paymentType,
     category: 'Продажа товаров',
-    note: (items || []).map(function (item) {
-      return item.name + ' x' + item.qty + ' = ' + (Number(item.price) * Number(item.qty));
-    }).join(', '),
+    note: lines.join(', '),
   };
 }
 
-function buildTelegramSaleMessage(items, point, paymentType, fmt) {
+function buildTelegramSaleMessage(items, point, paymentType, fmt, totalOverride) {
+  const subtotal = computeCartTotal(items);
+  const hasOverride = totalOverride !== null && totalOverride !== undefined && totalOverride !== subtotal;
   const lines = (items || []).map(function (item) {
     return '• ' + item.name + ' × ' + item.qty + ' — ' + fmt(Number(item.price) * Number(item.qty));
   });
   return '🛍 <b>Продажа</b>\n' + lines.join('\n') + '\n' +
     'Точка: ' + point + '\n' +
     'Оплата: ' + paymentType + '\n' +
-    'Итого: ' + fmt(computeCartTotal(items));
+    'Итого: ' + fmt(hasOverride ? totalOverride : subtotal);
 }
 
 if (typeof module !== 'undefined' && module.exports) {
@@ -482,7 +530,7 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 - Consumes: `buildSaleGoodsRows`, `buildOperationsRow`, `buildTelegramSaleMessage` from `AppScripts/Lib/SalesLogic.js` (Apps Script concatenates every project file into one scope — no `require` needed, call the globals directly, same as `computeDelta` is already called directly elsewhere in this file).
 - Consumes: the global `fmt` function (`AppScripts/Уведомления через ТГ-бот.js`) and the global `sendTelegram` function (same file).
 - Consumes: `appendGoodsRow_` from Task 3.
-- Produces: `getSalesCatalog()` → array of `{ name, current, price }`; `submitSale(items, point, paymentType)` → `{ written, total }`.
+- Produces: `getSalesCatalog()` → array of `{ name, current, price }`; `submitSale(items, point, paymentType, totalOverride)` → `{ written, total }`. `totalOverride` is `null`/absent for a normal sale, or the cashier-corrected whole-cart total — forwarded straight to `buildOperationsRow`/`buildTelegramSaleMessage` untouched, never redistributed across `items`.
 - Consumes (forward reference, filled in by Task 6): the constant `POSTCARD_VARIETY_NAMES` — until Task 6 adds it, declare a temporary empty array here so this task's code compiles and is independently testable; Task 6 replaces it with the real list.
 
 - [ ] **Step 1: Add `getSalesCatalog`, `submitSale`, and the income-row writer**
@@ -515,17 +563,17 @@ function getSalesCatalog() {
   });
 }
 
-function submitSale(items, point, paymentType) {
+function submitSale(items, point, paymentType, totalOverride) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const stockRows = buildSaleGoodsRows(items);
   stockRows.forEach(function (row) {
     appendGoodsRow_(ss, row.name, row.quantity, 'Продажа', 'Основной склад', '');
   });
 
-  const opRow = buildOperationsRow(items, paymentType);
+  const opRow = buildOperationsRow(items, paymentType, totalOverride);
   appendIncomeRow_(ss, opRow.amount, opRow.account, opRow.category, opRow.note);
 
-  sendTelegram(buildTelegramSaleMessage(items, point, paymentType, fmt));
+  sendTelegram(buildTelegramSaleMessage(items, point, paymentType, fmt, totalOverride));
 
   return { written: stockRows.length, total: opRow.amount };
 }
@@ -727,7 +775,7 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 - Modify: `AppScripts/Api.gs`
 
 **Interfaces:**
-- Adds GET action `getSalesCatalog`; POST action `submitSale`; extends the existing `submitInventory` POST action to pass `isSaleReconciliation` through; filters the `getProductsSnapshot` GET action to hide the postcard aggregate from the counting screen.
+- Adds GET action `getSalesCatalog`; POST action `submitSale` (forwarding `body.totalOverride`); extends the existing `submitInventory` POST action to pass `isSaleReconciliation` through; filters the `getProductsSnapshot` GET action to hide the postcard aggregate from the counting screen.
 
 - [ ] **Step 1: Add the new GET actions and filter the existing one**
 
@@ -772,7 +820,7 @@ to:
       return jsonResponse_(submitInventory(body.kind, body.location, body.counts, body.newItems, body.isSaleReconciliation));
     }
     if (body.action === 'submitSale') {
-      return jsonResponse_(submitSale(body.items, body.point, body.paymentType));
+      return jsonResponse_(submitSale(body.items, body.point, body.paymentType, body.totalOverride));
     }
     return jsonResponse_({ error: 'Неизвестное действие: ' + body.action });
 ```
@@ -827,6 +875,15 @@ Append to `WebFrontend/styles.css`:
 .chip { padding: 9px 14px; border-radius: 20px; border: 1.5px solid oklch(0.88 0.005 250); background: white; font-size: 13px; font-weight: 600; }
 .chip.selected { background: oklch(0.45 0.14 220); border-color: oklch(0.45 0.14 220); color: white; }
 .toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; }
+.cart-name-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.price-edit-input { width: 116px; height: 30px; border-radius: 8px; border: 1.5px solid oklch(0.45 0.14 220); background: oklch(0.98 0.002 250); font-size: 13px; font-weight: 700; padding: 0 8px; font-family: inherit; }
+.total-edit-input { width: 140px; height: 38px; border-radius: 10px; border: 1.5px solid oklch(0.45 0.14 220); background: oklch(0.98 0.002 250); font-size: 16px; font-weight: 800; padding: 0 10px; font-family: inherit; }
+.service-form { display: flex; flex-direction: column; gap: 8px; padding: 10px 0 6px; border-bottom: 1px solid oklch(0.92 0.005 250); }
+.service-form-row { display: flex; gap: 8px; }
+.service-input { flex: 1; height: 40px; border-radius: 10px; border: 1.5px solid oklch(0.88 0.005 250); padding: 0 12px; font-size: 13.5px; font-weight: 600; background: oklch(0.98 0.002 250); font-family: inherit; min-width: 0; }
+.service-form-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.btn-ghost { padding: 9px 14px; border-radius: 9px; border: none; background: none; color: oklch(0.55 0.01 250); font-size: 13px; font-weight: 700; }
+.btn-accent-sm { padding: 9px 16px; border-radius: 9px; border: none; background: oklch(0.45 0.14 220); color: white; font-size: 13px; font-weight: 800; }
 ```
 
 - [ ] **Step 2: Commit**
@@ -876,6 +933,10 @@ Create `WebFrontend/sales.html`:
       catalog: null,
       search: '',
       cart: [],
+      addingService: false,
+      editingPriceId: null,
+      editingTotal: false,
+      totalOverride: null,
       point: null,
       paymentType: null,
       submitting: false,
@@ -891,6 +952,15 @@ Create `WebFrontend/sales.html`:
 
     function cartTotal() {
       return state.cart.reduce(function (sum, item) { return sum + Number(item.price) * Number(item.qty); }, 0);
+    }
+
+    // What actually goes to the server: the honest per-line sum, unless the
+    // cashier corrected the whole order's total (see renderTotalRow/bindCatalog) —
+    // in which case that corrected number is used as-is, with no attempt to
+    // redistribute it back across individual lines.
+    function effectiveTotal() {
+      var subtotal = cartTotal();
+      return (state.totalOverride !== null && state.totalOverride !== subtotal) ? state.totalOverride : subtotal;
     }
 
     function fmtSum(n) { return Math.round(n).toLocaleString('ru-RU') + ' сум'; }
@@ -912,10 +982,20 @@ Create `WebFrontend/sales.html`:
       }).join('');
 
       var cartRows = state.cart.map(function (item) {
+        var lineTotal = item.price * item.qty;
+        var priceBlock;
+        if (state.editingPriceId === item.id) {
+          priceBlock = '<input class="price-edit-input" type="number" inputmode="decimal" id="price-input-' + item.id + '" value="' + lineTotal + '">';
+        } else {
+          priceBlock = '<button class="price-btn" data-edit-price="' + item.id + '">' + fmtSum(lineTotal) +
+            (item.qty > 1 ? ' <span style="font-weight:600;">(' + fmtSum(item.price) + '/шт)</span>' : '') +
+            (item.priceEdited ? ' <span class="badge-edited">изменено</span>' : '') + '</button>';
+        }
         return '<div class="row">' +
           '<div style="flex:1;min-width:0;">' +
-            '<div class="row-name">' + escapeHtml(item.name) + (item.isCustom ? ' <span class="badge-service">услуга</span>' : '') + '</div>' +
-            '<button class="price-btn" data-edit-price="' + item.id + '">' + fmtSum(Number(item.price)) + (item.priceEdited ? ' <span class="badge-edited">изменено</span>' : '') + '</button>' +
+            '<div class="cart-name-line"><span class="row-name">' + escapeHtml(item.name) + '</span>' +
+            (item.isCustom ? '<span class="badge-service">услуга</span>' : '') + '</div>' +
+            priceBlock +
           '</div>' +
           '<div class="qty-stepper">' +
             '<button class="qty-btn" data-qty-dec="' + item.id + '">−</button>' +
@@ -926,6 +1006,19 @@ Create `WebFrontend/sales.html`:
         '</div>';
       }).join('');
 
+      var serviceForm = state.addingService ? (
+        '<div class="service-form">' +
+          '<div class="service-form-row">' +
+            '<input class="service-input" id="service-name" placeholder="Название услуги">' +
+            '<input class="service-input" id="service-price" placeholder="Сумма" type="number" inputmode="decimal" style="max-width:110px;">' +
+          '</div>' +
+          '<div class="service-form-actions">' +
+            '<button class="btn-ghost" id="service-cancel">Отмена</button>' +
+            '<button class="btn-accent-sm" id="service-save">Добавить</button>' +
+          '</div>' +
+        '</div>'
+      ) : '';
+
       return '' +
         '<div class="screen">' +
           '<div class="header"><div><div class="title">Продажа</div><div class="subtitle">Основной склад</div></div></div>' +
@@ -933,16 +1026,33 @@ Create `WebFrontend/sales.html`:
           '<div class="list" style="flex:0 1 auto;max-height:38vh;">' + (catalogRows || '<div class="spinner">Ничего не найдено</div>') + '</div>' +
           '<div class="list" style="border-top:1px solid oklch(0.92 0.005 250);">' +
             cartRows +
-            '<button class="add-row-btn" id="add-service">' + plusIcon() + ' Добавить услугу</button>' +
+            serviceForm +
+            (!state.addingService ? '<button class="add-row-btn" id="add-service">' + plusIcon() + ' Добавить услугу</button>' : '') +
           '</div>' +
           '<div class="footer">' +
-            '<div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;">' +
-              '<div style="font-size:13px;color:oklch(0.55 0.01 250);">Итого</div>' +
-              '<div style="font-size:19px;font-weight:800;">' + fmtSum(cartTotal()) + '</div>' +
-            '</div>' +
+            renderTotalRow() +
             '<button class="primary-btn" id="go-checkout"' + (state.cart.length === 0 ? ' disabled' : '') + '>Оформить продажу</button>' +
           '</div>' +
         '</div>';
+    }
+
+    function renderTotalRow() {
+      var subtotal = cartTotal();
+      var hasOverride = state.totalOverride !== null && state.totalOverride !== subtotal;
+      if (state.editingTotal) {
+        return '<div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;">' +
+          '<div style="font-size:13px;color:oklch(0.55 0.01 250);">Итого</div>' +
+          '<input class="total-edit-input" type="number" inputmode="decimal" id="total-input" value="' + (hasOverride ? state.totalOverride : subtotal) + '">' +
+        '</div>';
+      }
+      return '<div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;">' +
+        '<div style="font-size:13px;color:oklch(0.55 0.01 250);">Итого</div>' +
+        '<div style="display:flex;align-items:baseline;gap:8px;">' +
+          (hasOverride ? '<span style="font-size:12px;font-weight:700;color:oklch(0.55 0.01 250);text-decoration:line-through;">' + fmtSum(subtotal) + '</span>' : '') +
+          '<button class="price-btn" id="edit-total" style="font-size:19px;font-weight:800;color:inherit;">' + fmtSum(hasOverride ? state.totalOverride : subtotal) + '</button>' +
+          (hasOverride ? ' <span class="badge-edited">изменено</span>' : '') +
+        '</div>' +
+      '</div>';
     }
 
     function bindCatalog() {
@@ -983,27 +1093,69 @@ Create `WebFrontend/sales.html`:
       });
       document.querySelectorAll('[data-edit-price]').forEach(function (btn) {
         btn.onclick = function () {
-          var id = btn.getAttribute('data-edit-price');
-          var item = state.cart.filter(function (i) { return i.id === id; })[0];
-          if (!item) return;
-          var next = prompt('Сумма за позицию «' + item.name + '»', String(item.price));
-          if (next === null) return;
-          var num = Number(next);
-          if (isNaN(num) || num < 0) return;
-          state.cart = state.cart.map(function (i) { return i.id === id ? Object.assign({}, i, { price: num, priceEdited: true }) : i; });
+          state.editingPriceId = btn.getAttribute('data-edit-price');
           render();
+          var input = document.getElementById('price-input-' + state.editingPriceId);
+          if (input) { input.focus(); input.select(); }
         };
       });
-      var addService = document.getElementById('add-service');
-      if (addService) addService.onclick = function () {
-        var name = prompt('Название услуги/позиции');
-        if (!name) return;
-        var priceStr = prompt('Сумма');
-        var price = Number(priceStr);
-        if (isNaN(price) || price < 0) return;
+      var priceInput = document.querySelector('.price-edit-input');
+      if (priceInput) {
+        var commitPrice = function () {
+          var id = state.editingPriceId;
+          var enteredTotal = Number(priceInput.value);
+          if (!isNaN(enteredTotal) && enteredTotal >= 0) {
+            state.cart = state.cart.map(function (i) {
+              if (i.id !== id) return i;
+              // The field edits this line's total, not a per-unit price — store
+              // price as total ÷ qty so cartTotal (Σ price × qty) and the
+              // Операции note (qty × price per line) keep matching what was typed.
+              return Object.assign({}, i, { price: enteredTotal / i.qty, priceEdited: true });
+            });
+          }
+          state.editingPriceId = null;
+          render();
+        };
+        priceInput.onblur = commitPrice;
+        priceInput.onkeydown = function (e) { if (e.key === 'Enter') priceInput.blur(); };
+      }
+
+      var addServiceBtn = document.getElementById('add-service');
+      if (addServiceBtn) addServiceBtn.onclick = function () { state.addingService = true; render(); };
+      var serviceCancel = document.getElementById('service-cancel');
+      if (serviceCancel) serviceCancel.onclick = function () { state.addingService = false; render(); };
+      var serviceSave = document.getElementById('service-save');
+      if (serviceSave) serviceSave.onclick = function () {
+        var name = document.getElementById('service-name').value.trim();
+        var price = Number(document.getElementById('service-price').value);
+        if (!name || isNaN(price) || price < 0) return;
         state.cart.push({ id: 'c' + Date.now() + Math.floor(Math.random() * 1000), name: name, qty: 1, price: price, isCustom: true, priceEdited: false });
+        state.addingService = false;
         render();
       };
+
+      var editTotalBtn = document.getElementById('edit-total');
+      if (editTotalBtn) editTotalBtn.onclick = function () {
+        state.editingTotal = true;
+        render();
+        var el = document.getElementById('total-input');
+        if (el) { el.focus(); el.select(); }
+      };
+      var totalInput = document.getElementById('total-input');
+      if (totalInput) {
+        var commitTotal = function () {
+          var num = Number(totalInput.value);
+          var subtotal = cartTotal();
+          if (!isNaN(num) && num >= 0) {
+            state.totalOverride = (num === subtotal) ? null : num;
+          }
+          state.editingTotal = false;
+          render();
+        };
+        totalInput.onblur = commitTotal;
+        totalInput.onkeydown = function (e) { if (e.key === 'Enter') totalInput.blur(); };
+      }
+
       var goCheckout = document.getElementById('go-checkout');
       if (goCheckout) goCheckout.onclick = function () {
         if (state.cart.length === 0) return;
@@ -1030,8 +1182,8 @@ Create `WebFrontend/sales.html`:
           '</div>' +
           '<div class="footer">' +
             '<div style="display:flex;justify-content:space-between;align-items:center;padding-bottom:10px;">' +
-              '<div style="font-size:13px;color:oklch(0.55 0.01 250);">Итого</div>' +
-              '<div style="font-size:19px;font-weight:800;">' + fmtSum(cartTotal()) + '</div>' +
+              '<div style="font-size:13px;color:oklch(0.55 0.01 250);">К оплате</div>' +
+              '<div style="font-size:19px;font-weight:800;">' + fmtSum(effectiveTotal()) + '</div>' +
             '</div>' +
             '<button class="primary-btn" id="confirm-sale"' + (!state.point || !state.paymentType || state.submitting ? ' disabled' : '') + '>' + (state.submitting ? 'Оформляем…' : 'Подтвердить') + '</button>' +
           '</div>' +
@@ -1054,9 +1206,9 @@ Create `WebFrontend/sales.html`:
       if (!state.point || !state.paymentType || state.submitting) return;
       state.submitting = true;
       render();
-      var total = cartTotal();
+      var total = effectiveTotal();
       var itemsLabel = state.cart.map(function (i) { return i.name + ' ×' + i.qty; }).join(', ');
-      apiPost('submitSale', { items: state.cart, point: state.point, paymentType: state.paymentType })
+      apiPost('submitSale', { items: state.cart, point: state.point, paymentType: state.paymentType, totalOverride: state.totalOverride })
         .then(function () {
           state.confirm = { total: total, itemsLabel: itemsLabel };
           state.submitting = false;
@@ -1086,7 +1238,7 @@ Create `WebFrontend/sales.html`:
     function bindConfirm() {
       document.getElementById('new-sale').onclick = function () {
         var point = state.point, paymentType = state.paymentType;
-        state = { screen: 'catalog', catalog: state.catalog, search: '', cart: [], point: point, paymentType: paymentType, submitting: false, confirm: null };
+        state = { screen: 'catalog', catalog: state.catalog, search: '', cart: [], addingService: false, editingPriceId: null, editingTotal: false, totalOverride: null, point: point, paymentType: paymentType, submitting: false, confirm: null };
         render();
       };
     }
@@ -1123,7 +1275,7 @@ Create `WebFrontend/sales.html`:
 </html>
 ```
 
-Design note for whoever reviews this: price editing and adding a free-form service both use the browser's native `prompt()` dialog rather than an inline form. This trades a small amount of visual polish for a much smaller amount of code and the fewest possible taps (one tap to open the dialog, type, and confirm) — appropriate for a fast-checkout tool used standing at a table during an exhibition. If this proves awkward in practice during Task 13's manual walkthrough, replacing it with an inline input is a contained follow-up, not a rearchitecture.
+Design note for whoever reviews this: price and service entry use inline fields (a text input that appears in place, focused automatically) rather than `prompt()` dialogs, per the approved interactive prototype — this reads better on a real device and was validated with the owner before this task was written. Tapping a cart line's price edits **that line's total** (not a per-unit price); the stored `price` becomes `enteredTotal / qty` so `cartTotal`/`buildOperationsRow` keep working unchanged. Tapping the footer "Итого" edits the **whole order's total** independently of any line — a second, separate lever: line edits change what a specific position is worth (and still sum normally into the subtotal), while the order-level edit corrects the final charged amount in one step (e.g. a round-number discount) without touching any line, per the owner's own walkthrough: 5×25 000 + 1×75 000 + a 125 000 service = 325 000 subtotal, corrected to 300 000 for the whole order. Typing the current subtotal back into the total field clears the override.
 
 - [ ] **Step 2: Manual walkthrough**
 
@@ -1132,11 +1284,12 @@ Open `sales.html` locally (or after Task 12's deploy, on the real GitHub Pages U
 2. Typing in the search box filters the catalog list live.
 3. Tapping a catalog item adds it to the cart below with quantity 1; tapping the same item again increments its quantity instead of adding a duplicate row.
 4. The `+`/`−` steppers change quantity; decrementing a quantity-1 item removes it from the cart.
-5. Tapping a cart item's price prompts for a new amount; entering one updates the line total and shows the "изменено" badge.
-6. "Добавить услугу" prompts for a name and amount and adds a service-badged row that is **not** in the catalog.
+5. Tapping a cart line's price (for an item with qty > 1) opens an inline field pre-filled with the line's current total, not its per-unit price; committing a new value updates the line total, shows the "изменено" badge, and shows the resulting per-unit price in parentheses.
+6. "Добавить услугу" opens an inline name+amount form; saving adds a service-badged row that is **not** in the catalog.
 7. The footer total updates live as the cart changes; "Оформить продажу" is disabled while the cart is empty and enabled once it has at least one item.
-8. Tapping "Оформить продажу" opens the checkout screen with point/payment chips; "Подтвердить" stays disabled until both are picked.
-9. Confirming shows the confirmation screen with the correct total and item list; "Новая продажа" returns to an empty cart on the same catalog, with point and payment still selected.
+8. Tapping the footer "Итого" itself (not a line) opens an inline field pre-filled with the current subtotal; entering a different number shows it with the original subtotal struck through beside it and an "изменено" badge, and the checkout screen's "К оплате" reflects the corrected number, not the subtotal.
+9. Tapping "Оформить продажу" opens the checkout screen with point/payment chips; "Подтвердить" stays disabled until both are picked.
+10. Confirming shows the confirmation screen with the corrected total (if one was set) and item list; "Новая продажа" returns to an empty cart on the same catalog, with point, payment, and any total override all reset.
 
 - [ ] **Step 3: Commit**
 
@@ -1337,9 +1490,15 @@ Expected: the most recent run's status is `completed`/`success`. If it failed, r
 
 **Files:** none
 
-- [ ] **Step 1: Multi-item sale with a manual price override and a free-form service**
+- [ ] **Step 1: Multi-item sale reproducing the owner's own worked example**
 
-On the deployed `sales.html`, add 2+ stock items, override one item's price, add one free-form service, confirm the sale with a real point/payment. For a cart of N stock items + the one service, verify exactly **N + 1** new rows landed in `Ответы на форму (1)`: N rows with `Вид действия="Продажа"` (one per stock item, quantity only — no price, matching how `Реестр товаров`/`Склад товаров` have never carried price for any record type), plus exactly **one** `Тип записи="Доход"` row for the whole cart. The service does **not** get its own goods-movement row — it only exists inside that one Доход row. Verify the Доход row's `Сумма` equals the full cart total including the service and the overridden price, its `Тип оплаты` matches the chosen account, and its `Описание` spells out every line as `name x qty = amount` — including the overridden line showing the overridden amount, not the catalog price — since this note is the only place that per-line detail survives. Verify `Реестр товаров` shows the N stock rows with `Тип="Продажа"`, `Склад товаров`'s "Основной склад" остаток for each stock item decreased by the sold quantity, and the Telegram channel received one message listing every item (including the service, at its actual charged amount) and the correct total.
+On the deployed `sales.html`, reproduce the exact example the owner walked through during design: add 5× an item priced 25 000 (line total 125 000), add 1× a different item priced 75 000 (line total 75 000), add one free-form service at 125 000 — subtotal 325 000 — then tap the footer "Итого" and correct it to 300 000, and confirm the sale with a real point/payment.
+
+For this cart of 2 stock items + 1 service, verify exactly **3** new rows landed in `Ответы на форму (1)`: 2 rows with `Вид действия="Продажа"` (one per stock item — quantities 5 and 1, no price at all, matching how `Реестр товаров`/`Склад товаров` have never carried price for any record type), plus exactly **1** `Тип записи="Доход"` row for the whole cart. The service does **not** get its own goods-movement row — it only exists inside that one Доход row. These two kinds of rows carry **no shared reference** to each other (no common order id) — confirm there isn't one, matching the design.
+
+Verify the Доход row's `Сумма` is **300 000** (the corrected total, not the 325 000 subtotal), its `Тип оплаты` matches the chosen account, and its `Описание` reads `<item 1> x5 = 125000, <item 2> x1 = 75000, <service name> x1 = 125000, Итого по позициям: 325000, к оплате: 300000`. Verify `Реестр товаров` shows the 2 stock rows with `Тип="Продажа"` and quantities 5/1, `Склад товаров`'s "Основной склад" остаток for each stock item decreased by exactly that quantity (unaffected by the 300 000 vs 325 000 correction — the goods-movement rows never carried price to begin with), and the Telegram channel received one message listing every item (including the service) with its own line total, and an "Итого" of 300 000.
+
+Also confirm whether the `Операции` sheet's `ID` column populated itself automatically for the new Доход row (expected, if it's formula-driven like `Реестр товаров`'s own `# ID` column) — if it did not, this plan's Task 4 `appendIncomeRow_` needs an explicit id-writing step added before this task can be considered done; record what you find in this plan's Global Constraints either way.
 
 - [ ] **Step 2: Postcard sale + post-event reconciliation**
 
@@ -1361,6 +1520,6 @@ If Step 1 or 2 surfaces a mismatch between the actual live spreadsheet formulas 
 
 ## Self-Review Notes
 
-- **Spec coverage:** every requirement from the spec's "Инструмент 2: Корзина продаж" and "Особый случай: открытки" sections maps to a task — catalog/остаток always from Основной склад (Task 4), manual price override + free-form services (Task 2, Task 9), one-click checkout with point/payment defaults (Task 9), Операции + Реестр товаров + Telegram writes (Task 4), postcard aggregate and reconciliation toggle (Tasks 1, 5, 6, 11).
+- **Spec coverage:** every requirement from the spec's "Инструмент 2: Корзина продаж" and "Особый случай: открытки" sections maps to a task — catalog/остаток always from Основной склад (Task 4), per-line price override + free-form services (Task 2, Task 9), whole-order total override without line redistribution (Task 2, Task 4, Task 7, Task 9), one-click checkout with point/payment defaults (Task 9), independent Операции + Реестр товаров + Telegram writes with no shared order id (Task 4), postcard aggregate and reconciliation toggle (Tasks 1, 5, 6, 11).
 - **Placeholder scan:** the only literal placeholder-shaped array is `POSTCARD_VARIETY_NAMES = []` introduced in Task 4 — it is explicitly a forward reference resolved by name in Task 6, Step 1, with an owner-facing data-collection task (Task 5) producing the real values; this mirrors how `ALLOWED_EMAILS` is already a hand-filled array in this codebase and is not a deferred implementation.
-- **Type consistency:** `appendGoodsRow_(ss, name, quantity, vidDeistviya, from, to)` signature is introduced once (Task 3) and used identically in Task 4, Task 6; `classifyGoodsDelta`'s `{ type, mirrorToAggregate }` shape is defined once (Task 1) and consumed once (Task 6) with matching field names; the cart item shape `{ name, qty, price, isCustom, priceEdited }` is produced by `sales.html` (Task 9) and consumed by `SalesLogic.js` (Task 2) using the same field names throughout.
+- **Type consistency:** `appendGoodsRow_(ss, name, quantity, vidDeistviya, from, to)` signature is introduced once (Task 3) and used identically in Task 4, Task 6; `classifyGoodsDelta`'s `{ type, mirrorToAggregate }` shape is defined once (Task 1) and consumed once (Task 6) with matching field names; `buildOperationsRow`/`buildTelegramSaleMessage`'s `totalOverride` parameter is defined once (Task 2), threaded through `submitSale` (Task 4) and `Api.gs`'s `submitSale` action (Task 7) unchanged, and produced by `sales.html`'s `state.totalOverride` (Task 9); the cart item shape `{ name, qty, price, isCustom, priceEdited }` is produced by `sales.html` (Task 9) and consumed by `SalesLogic.js` (Task 2) using the same field names throughout.
