@@ -47,11 +47,16 @@ function handleApiPost_(e) {
       return jsonResponse_(submitInventory(body.kind, body.location, body.counts, body.newItems, body.isSaleReconciliation));
     }
     if (body.action === 'submitSale') {
-      return jsonResponse_(submitSale(body.items, body.point, body.paymentType, body.totalOverride));
+      return jsonResponse_(submitSale(body.items, body.paymentType, body.totalOverride));
     }
     return jsonResponse_({ error: 'Неизвестное действие: ' + body.action });
   } catch (err) {
-    return jsonResponse_({ error: 'Внутренняя ошибка' });
+    // submitSale throws a user-actionable Russian message (e.g. an unmapped
+    // payment type) that the cashier needs to actually see, not a generic
+    // "internal error" — this endpoint has exactly two allowed users (see
+    // ALLOWED_EMAILS), so surfacing err.message here isn't an information
+    // disclosure concern the way it would be on a public API.
+    return jsonResponse_({ error: err && err.message ? err.message : 'Внутренняя ошибка' });
   }
 }
 

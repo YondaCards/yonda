@@ -14,12 +14,13 @@
     // Stock always writes off from "Основной склад" — the point/channel a sale
     // physically happens at was previously a separate, user-picked attribute,
     // but the owner asked to drop that distinction entirely: every sale is now
-    // just always "Основной склад", with no selection step.
-    var SALES_POINT = 'Основной склад';
+    // just always "Основной склад", with no selection step and nothing sent
+    // to the server for it at all (submitSale no longer takes a point).
     var state = {
       screen: 'catalog',
       catalog: null,
       paymentTypes: null, // {type, account}[] from "Справочники" (Счета, D:E) — fetched, not hardcoded
+      paymentTypesError: null,
       search: '',
       cart: [],
       addingService: false,
@@ -260,11 +261,19 @@
     }
 
     function renderCheckout() {
-      var paymentSection = state.paymentTypes === null
-        ? '<div class="spinner">Загрузка…</div>'
-        : '<div class="chip-row">' + state.paymentTypes.map(function (p) {
-            return '<button class="chip' + (state.paymentType === p.type ? ' selected' : '') + '" data-payment="' + escapeAttr(p.type) + '">' + escapeHtml(p.type) + '</button>';
-          }).join('') + '</div>';
+      var paymentSection;
+      if (state.paymentTypesError) {
+        paymentSection = '<div class="spinner">Не удалось загрузить типы оплаты.</div>' +
+          '<button class="btn-ghost" id="retry-payment-types">Повторить</button>';
+      } else if (state.paymentTypes === null) {
+        paymentSection = '<div class="spinner">Загрузка…</div>';
+      } else if (state.paymentTypes.length === 0) {
+        paymentSection = '<div class="spinner">Список типов оплаты пуст — проверьте «Справочники» (Счета, D:E).</div>';
+      } else {
+        paymentSection = '<div class="chip-row">' + state.paymentTypes.map(function (p) {
+          return '<button class="chip' + (state.paymentType === p.type ? ' selected' : '') + '" data-payment="' + escapeAttr(p.type) + '">' + escapeHtml(p.type) + '</button>';
+        }).join('') + '</div>';
+      }
       return '' +
         '<div class="screen">' +
           '<div class="header"><button class="back-btn" id="back-to-catalog">' + backIcon() + '</button><div class="title">Оформление</div></div>' +
@@ -289,6 +298,20 @@
       });
       var confirmBtn = document.getElementById('confirm-sale');
       if (confirmBtn) confirmBtn.onclick = onConfirmSale;
+      var retryBtn = document.getElementById('retry-payment-types');
+      if (retryBtn) retryBtn.onclick = loadPaymentTypes;
+    }
+
+    function loadPaymentTypes() {
+      state.paymentTypesError = null;
+      render();
+      apiGet('getPaymentTypes', {})
+        .then(function (types) { state.paymentTypes = types; render(); })
+        .catch(function (err) {
+          if (isTokenAuthError(err)) { onError(err); return; }
+          state.paymentTypesError = true;
+          render();
+        });
     }
 
     function onConfirmSale() {
@@ -297,7 +320,7 @@
       render();
       var total = effectiveTotal();
       var itemsLabel = state.cart.map(function (i) { return i.name + ' ×' + i.qty; }).join(', ');
-      apiPost('submitSale', { items: state.cart, point: SALES_POINT, paymentType: state.paymentType, totalOverride: state.totalOverride })
+      apiPost('submitSale', { items: state.cart, paymentType: state.paymentType, totalOverride: state.totalOverride })
         .then(function () {
           state.confirm = { total: total, itemsLabel: itemsLabel };
           state.submitting = false;
@@ -327,7 +350,7 @@
     function bindConfirm() {
       document.getElementById('new-sale').onclick = function () {
         var paymentType = state.paymentType;
-        state = { screen: 'catalog', catalog: state.catalog, paymentTypes: state.paymentTypes, search: '', cart: [], addingService: false, editingPriceId: null, editingTotal: false, totalOverride: null, paymentType: paymentType, submitting: false, confirm: null };
+        state = { screen: 'catalog', catalog: state.catalog, paymentTypes: state.paymentTypes, paymentTypesError: null, search: '', cart: [], addingService: false, editingPriceId: null, editingTotal: false, totalOverride: null, paymentType: paymentType, submitting: false, confirm: null };
         render();
       };
     }
@@ -355,7 +378,7 @@
     function onSignedIn() {
       render();
       apiGet('getSalesCatalog', {}).then(function (items) { state.catalog = items; render(); }).catch(onError);
-      apiGet('getPaymentTypes', {}).then(function (types) { state.paymentTypes = types; render(); }).catch(onError);
+      loadPaymentTypes();
     }
 
     renderSignedOut();

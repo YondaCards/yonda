@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { computeCartTotal, buildSaleGoodsRows, buildOperationsRow, buildTelegramSaleMessage } = require('./SalesLogic.js');
+const { computeCartTotal, buildSaleGoodsRows, buildOperationsRow, resolveAccount, buildTelegramSaleMessage } = require('./SalesLogic.js');
 
 test('computeCartTotal sums price × qty across all items', () => {
   assert.equal(computeCartTotal([{ price: 15000, qty: 2 }, { price: 5000, qty: 1 }]), 35000);
@@ -18,12 +18,12 @@ test('buildSaleGoodsRows keeps only stock items, drops free-form services', () =
   assert.deepEqual(rows, [{ name: 'Открытка', quantity: 3 }]);
 });
 
-test('buildOperationsRow uses the payment type directly as the account name', () => {
-  const row = buildOperationsRow([{ name: 'Открытка', qty: 2, price: 15000 }], 'Карта (личная)');
+test('buildOperationsRow writes the given (already-resolved) account straight into the row', () => {
+  const row = buildOperationsRow([{ name: 'Открытка', qty: 2, price: 15000 }], 'Расчётный счёт ИП');
   assert.deepEqual(row, {
     type: 'Доход',
     amount: 30000,
-    account: 'Карта (личная)',
+    account: 'Расчётный счёт ИП',
     category: 'Продажа товаров',
     note: 'Открытка x2 = 30000',
   });
@@ -73,17 +73,35 @@ test('computeCartTotal and buildOperationsRow round a floating-point line total 
   assert.equal(row.note, 'Открытка x7 = 15000');
 });
 
-test('buildTelegramSaleMessage lists every item with its line total, point, payment and grand total', () => {
+test('resolveAccount returns the mapped account for a matching payment type', () => {
+  const paymentTypes = [{ type: 'Нал', account: 'Наличка' }, { type: 'Карта', account: 'Расчётный счёт ИП' }];
+  assert.equal(resolveAccount(paymentTypes, 'Карта'), 'Расчётный счёт ИП');
+});
+
+test('resolveAccount returns null when the payment type has no matching row', () => {
+  const paymentTypes = [{ type: 'Нал', account: 'Наличка' }];
+  assert.equal(resolveAccount(paymentTypes, 'Клик'), null);
+});
+
+test('resolveAccount returns null when the matched row has a blank account (incomplete Справочники setup)', () => {
+  const paymentTypes = [{ type: 'Нал', account: '' }];
+  assert.equal(resolveAccount(paymentTypes, 'Нал'), null);
+});
+
+test('resolveAccount returns null for an empty payment-types list', () => {
+  assert.equal(resolveAccount([], 'Нал'), null);
+});
+
+test('buildTelegramSaleMessage lists every item with its line total, the payment type resolved to its account, and the grand total', () => {
   const fmt = (n) => Math.round(n).toLocaleString('ru-RU') + ' сум';
   const msg = buildTelegramSaleMessage(
     [{ name: 'Открытка', qty: 2, price: 15000 }],
-    'Маркеты',
+    'Нал',
     'Наличка',
     fmt
   );
   assert.match(msg, /Открытка × 2 — 30 000 сум/);
-  assert.match(msg, /Точка: Маркеты/);
-  assert.match(msg, /Оплата: Наличка/);
+  assert.match(msg, /Оплата: Нал → Наличка/);
   assert.match(msg, /Итого: 30 000 сум/);
 });
 
@@ -91,7 +109,7 @@ test('buildTelegramSaleMessage shows the corrected total when the whole cart was
   const fmt = (n) => Math.round(n).toLocaleString('ru-RU') + ' сум';
   const msg = buildTelegramSaleMessage(
     [{ name: 'Открытка', qty: 2, price: 15000 }],
-    'Маркеты',
+    'Нал',
     'Наличка',
     fmt,
     25000

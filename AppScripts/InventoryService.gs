@@ -319,6 +319,7 @@ function getSalesCatalog() {
 function getPaymentTypes() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(SHEET_REFERENCES);
+  if (!sheet) return [];
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) return [];
   const data = sheet.getRange(2, 4, lastRow - 1, 2).getValues(); // D:E
@@ -327,23 +328,30 @@ function getPaymentTypes() {
     .map(function (row) { return { type: row[0], account: row[1] }; });
 }
 
-function getAccountForPaymentType_(paymentType) {
-  const match = getPaymentTypes().filter(function (p) { return p.type === paymentType; })[0];
-  return match ? match.account : paymentType; // unmapped type: fall back to using it as-is rather than silently dropping the payment
-}
-
-function submitSale(items, point, paymentType, totalOverride) {
+function submitSale(items, paymentType, totalOverride) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  // Resolve the account BEFORE writing anything: an unmapped payment type or
+  // a Справочники row with Тип оплаты filled but Счёт still blank must refuse
+  // the sale outright, not write an unvalidated (or empty) string into a real
+  // financial ledger. Doing this before the stock write-off loop also means a
+  // resolution failure can't leave stock already deducted with no matching
+  // income row for the cashier to retry against (which would double-deduct
+  // stock on retry).
+  const account = resolveAccount(getPaymentTypes(), paymentType);
+  if (!account) {
+    throw new Error('Тип оплаты "' + paymentType + '" не сопоставлен со счётом в Справочники!D:E — продажа не оформлена.');
+  }
+
   const stockRows = buildSaleGoodsRows(items);
   stockRows.forEach(function (row) {
     appendGoodsRow_(ss, row.name, row.quantity, 'Продажа', 'Основной склад', '');
   });
 
-  const account = getAccountForPaymentType_(paymentType);
   const opRow = buildOperationsRow(items, account, totalOverride);
   appendIncomeRow_(ss, opRow.amount, opRow.account, opRow.category, opRow.note);
 
-  sendTelegram(buildTelegramSaleMessage(items, point, paymentType, fmt, totalOverride));
+  sendTelegram(buildTelegramSaleMessage(items, paymentType, account, fmt, totalOverride));
 
   return { written: stockRows.length, total: opRow.amount };
 }

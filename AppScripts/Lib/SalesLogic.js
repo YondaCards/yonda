@@ -16,7 +16,7 @@ function buildSaleGoodsRows(items) {
     });
 }
 
-function buildOperationsRow(items, paymentType, totalOverride) {
+function buildOperationsRow(items, account, totalOverride) {
   // Neither "Реестр товаров" (quantity-only, no price column) nor this row's
   // own Сумма (one grand total for the whole cart) preserve what a specific
   // line actually sold for. The note spells out qty × price per line — the
@@ -40,26 +40,38 @@ function buildOperationsRow(items, paymentType, totalOverride) {
   return {
     type: 'Доход',
     amount: hasOverride ? totalOverride : subtotal,
-    account: paymentType,
+    account: account,
     category: 'Продажа товаров',
     note: lines.join(', '),
   };
 }
 
-function buildTelegramSaleMessage(items, point, paymentType, fmt, totalOverride) {
+// Resolves the cashier-facing payment type (e.g. "Нал") to the account it
+// actually credits in "Операции" (e.g. "Наличка"), per the "Справочники"
+// Счета table (columns D:E — see AppScripts/InventoryService.gs's
+// getPaymentTypes()). Pure lookup, no GAS dependency, so the "no match" and
+// "matched but blank account" cases — the two ways this can go wrong against
+// real spreadsheet data — are cheap to test here. Returns null for either
+// failure case; the caller decides how loudly to fail (writing an unvalidated
+// or empty string into a financial ledger is worse than refusing the sale).
+function resolveAccount(paymentTypes, paymentType) {
+  const match = (paymentTypes || []).filter(function (p) { return p.type === paymentType; })[0];
+  return (match && match.account) ? match.account : null;
+}
+
+function buildTelegramSaleMessage(items, paymentType, account, fmt, totalOverride) {
   const subtotal = computeCartTotal(items);
   const hasOverride = totalOverride !== null && totalOverride !== undefined && totalOverride !== subtotal;
   const lines = (items || []).map(function (item) {
     return '• ' + item.name + ' × ' + item.qty + ' — ' + fmt(Math.round(Number(item.price) * Number(item.qty)));
   });
   const msg = '🛍 <b>Продажа</b>\n' + lines.join('\n') + '\n' +
-    'Точка: ' + point + '\n' +
-    'Оплата: ' + paymentType + '\n' +
+    'Оплата: ' + paymentType + ' → ' + account + '\n' +
     'Итого: ' + fmt(hasOverride ? totalOverride : subtotal);
   // Normalize non-breaking spaces to regular spaces for consistent regex matching
   return msg.replace(/ /g, ' ');
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { computeCartTotal, buildSaleGoodsRows, buildOperationsRow, buildTelegramSaleMessage };
+  module.exports = { computeCartTotal, buildSaleGoodsRows, buildOperationsRow, resolveAccount, buildTelegramSaleMessage };
 }
