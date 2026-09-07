@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Yonda — Расход</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app"></div>
+  <script src="auth.js"></script>
+  <script src="api.js"></script>
+  <script>
+    var state = {
+      categories: null,        // string[] from "Справочники" column G — fetched, not hardcoded
+      categoriesError: null,
+      paymentTypes: null,      // {type, account}[] from "Справочники" (Счета, D:E) — same source sales.html uses; only .type is ever shown
+      paymentTypesError: null,
+      category: null,
+      amount: '',
+      paymentType: null,
+      note: '',
+      submitting: false,
+      screen: 'form',
+      confirm: null
+    };
+
+    function render() {
+      var app = document.getElementById('app');
+      if (state.screen === 'form') { app.innerHTML = renderForm(); bindForm(); return; }
+      if (state.screen === 'confirm') { app.innerHTML = renderConfirm(); bindConfirm(); return; }
+    }
+
+    function fmtSum(n) { return Math.round(n).toLocaleString('ru-RU') + ' сум'; }
+
+    function renderForm() {
+      var categorySection;
+      if (state.categoriesError) {
+        categorySection = '<div class="spinner">Не удалось загрузить категории расхода.</div>' +
+          '<button class="btn-ghost" id="retry-categories">Повторить</button>';
+      } else if (state.categories === null) {
+        categorySection = '<div class="spinner">Загрузка…</div>';
+      } else if (state.categories.length === 0) {
+        categorySection = '<div class="spinner">Список категорий пуст — проверьте «Справочники», столбец G.</div>';
+      } else {
+        categorySection = '<div class="chip-row">' + state.categories.map(function (c) {
+          return '<button class="chip' + (state.category === c ? ' selected' : '') + '" data-category="' + escapeAttr(c) + '">' + escapeHtml(c) + '</button>';
+        }).join('') + '</div>';
+      }
+
+      var paymentSection;
+      if (state.paymentTypesError) {
+        paymentSection = '<div class="spinner">Не удалось загрузить типы оплаты.</div>' +
+          '<button class="btn-ghost" id="retry-payment-types">Повторить</button>';
+      } else if (state.paymentTypes === null) {
+        paymentSection = '<div class="spinner">Загрузка…</div>';
+      } else if (state.paymentTypes.length === 0) {
+        paymentSection = '<div class="spinner">Список типов оплаты пуст — проверьте «Справочники» (Счета, D:E).</div>';
+      } else {
+        paymentSection = '<div class="chip-row">' + state.paymentTypes.map(function (p) {
+          return '<button class="chip' + (state.paymentType === p.type ? ' selected' : '') + '" data-payment="' + escapeAttr(p.type) + '">' + escapeHtml(p.type) + '</button>';
+        }).join('') + '</div>';
+      }
+
+      return '' +
+        '<div class="screen">' +
+          '<div class="header"><div class="title">Расход</div></div>' +
+          '<div class="list">' +
+            '<div style="font-size:13px;font-weight:700;margin:10px 0 8px;">Категория</div>' +
+            categorySection +
+            '<div style="font-size:13px;font-weight:700;margin:18px 0 8px;">Сумма</div>' +
+            '<input class="name-input" style="width:100%;" type="number" inputmode="decimal" placeholder="Сумма" id="amount-input" value="' + escapeAttr(state.amount) + '">' +
+            '<div style="font-size:13px;font-weight:700;margin:18px 0 8px;">Оплата</div>' +
+            paymentSection +
+            '<div style="font-size:13px;font-weight:700;margin:18px 0 8px;">Примечание</div>' +
+            '<input class="name-input" style="width:100%;" type="text" placeholder="Необязательно" id="note-input" value="' + escapeAttr(state.note) + '">' +
+          '</div>' +
+          '<div class="footer">' +
+            '<button class="primary-btn" id="submit-expense"' + (!state.category || !state.paymentType || state.submitting ? ' disabled' : '') + '>' + (state.submitting ? 'Записываем…' : 'Записать расход') + '</button>' +
+          '</div>' +
+        '</div>';
+    }
+
+    function bindForm() {
+      document.querySelectorAll('[data-category]').forEach(function (btn) {
+        btn.onclick = function () { state.category = btn.getAttribute('data-category'); render(); };
+      });
+      document.querySelectorAll('[data-payment]').forEach(function (btn) {
+        btn.onclick = function () { state.paymentType = btn.getAttribute('data-payment'); render(); };
+      });
+
+      // Deliberately do NOT call render() from these two handlers: this
+      // screen also has chip buttons whose click handlers DO call render(),
+      // which rebuilds the whole screen via innerHTML. If amount/note typing
+      // also triggered a full render on every keystroke, the input would be
+      // replaced (and focus dropped) after every character — and if it did
+      // NOT keep state in sync, a chip click mid-typing would wipe out
+      // whatever had been typed. Keeping state in sync without re-rendering
+      // solves both: focus survives typing, and any later chip-triggered
+      // render restores the typed value via the value="..." attribute above.
+      var amountInput = document.getElementById('amount-input');
+      if (amountInput) amountInput.oninput = function () { state.amount = amountInput.value; };
+      var noteInput = document.getElementById('note-input');
+      if (noteInput) noteInput.oninput = function () { state.note = noteInput.value; };
+
+      var submitBtn = document.getElementById('submit-expense');
+      if (submitBtn) submitBtn.onclick = onSubmitExpense;
+      var retryCategories = document.getElementById('retry-categories');
+      if (retryCategories) retryCategories.onclick = loadCategories;
+      var retryPaymentTypes = document.getElementById('retry-payment-types');
+      if (retryPaymentTypes) retryPaymentTypes.onclick = loadPaymentTypes;
+    }
+
+    function onSubmitExpense() {
+      if (!state.category || !state.paymentType || state.submitting) return;
+      var amount = Number(state.amount);
+      if (!state.amount || isNaN(amount) || amount <= 0) {
+        alert('Введите сумму больше 0.');
+        return;
+      }
+      state.submitting = true;
+      render();
+      apiPost('submitExpense', { category: state.category, amount: amount, paymentType: state.paymentType, note: state.note })
+        .then(function () {
+          state.confirm = { category: state.category, amount: amount, paymentType: state.paymentType };
+          state.submitting = false;
+          state.screen = 'confirm';
+          render();
+        })
+        .catch(function (err) {
+          state.submitting = false;
+          render();
+          onError(err);
+        });
+    }
+
+    function renderConfirm() {
+      return '' +
+        '<div class="screen">' +
+          '<div style="display:flex;flex-direction:column;align-items:center;gap:10px;padding:40px 20px 22px;">' +
+            '<div style="width:52px;height:52px;border-radius:50%;background:oklch(0.93 0.05 145);display:flex;align-items:center;justify-content:center;">' + checkIcon() + '</div>' +
+            '<div style="font-size:18px;font-weight:800;">Расход записан</div>' +
+            '<div style="font-size:22px;font-weight:800;">' + fmtSum(state.confirm.amount) + '</div>' +
+            '<div style="font-size:13px;color:oklch(0.55 0.01 250);text-align:center;">' + escapeHtml(state.confirm.category) + ' · ' + escapeHtml(state.confirm.paymentType) + '</div>' +
+          '</div>' +
+          '<div class="footer" style="border-top:none;"><button class="dark-btn" id="new-expense">Новый расход</button></div>' +
+        '</div>';
+    }
+
+    function bindConfirm() {
+      document.getElementById('new-expense').onclick = function () {
+        var paymentType = state.paymentType;
+        state = { categories: state.categories, categoriesError: null, paymentTypes: state.paymentTypes, paymentTypesError: null, category: null, amount: '', paymentType: paymentType, note: '', submitting: false, screen: 'form', confirm: null };
+        render();
+      };
+    }
+
+    function loadCategories() {
+      state.categoriesError = null;
+      render();
+      apiGet('getExpenseCategories', {})
+        .then(function (categories) { state.categories = categories; render(); })
+        .catch(function (err) {
+          if (isTokenAuthError(err)) { onError(err); return; }
+          state.categoriesError = true;
+          render();
+        });
+    }
+
+    function loadPaymentTypes() {
+      state.paymentTypesError = null;
+      render();
+      apiGet('getPaymentTypes', {})
+        .then(function (types) { state.paymentTypes = types; render(); })
+        .catch(function (err) {
+          if (isTokenAuthError(err)) { onError(err); return; }
+          state.paymentTypesError = true;
+          render();
+        });
+    }
+
+    function onError(err) {
+      if (isTokenAuthError(err)) {
+        alert('Сессия истекла — войдите заново. Введённые данные будут потеряны.');
+        signOut();
+        return;
+      }
+      alert('Ошибка: ' + (err && err.message ? err.message : err));
+    }
+
+    function escapeHtml(s) { return String(s).replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); }
+    function escapeAttr(s) { return escapeHtml(s).replace(/"/g, '&quot;'); }
+    function checkIcon() { return '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="oklch(0.4 0.14 145)" stroke-width="2.4"><path d="M5 13l4 4L19 7"></path></svg>'; }
+
+    function renderSignedOut() {
+      document.getElementById('app').innerHTML = '<div class="signin-wrap"><div style="font-size:16px;font-weight:700;">Войдите, чтобы продолжить</div><div id="signin-button"></div></div>';
+    }
+
+    function onSignedIn() {
+      render();
+      loadCategories();
+      loadPaymentTypes();
+    }
+
+    renderSignedOut();
+  </script>
+  <script src="https://accounts.google.com/gsi/client" async onload="initAuth(onSignedIn)"></script>
+</body>
+</html>
