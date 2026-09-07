@@ -27,6 +27,9 @@ function handleApiGet_(e) {
     if (action === 'getPaymentTypes') {
       return jsonResponse_(getPaymentTypes());
     }
+    if (action === 'getExpenseCategories') {
+      return jsonResponse_(getExpenseCategories());
+    }
     return jsonResponse_({ error: 'Неизвестное действие: ' + action });
   } catch (err) {
     return jsonResponse_({ error: 'Внутренняя ошибка' });
@@ -48,6 +51,9 @@ function handleApiPost_(e) {
     }
     if (body.action === 'submitSale') {
       return jsonResponse_(submitSale(body.items, body.paymentType, body.totalOverride));
+    }
+    if (body.action === 'submitExpense') {
+      return jsonResponse_(submitExpense(body.category, body.amount, body.paymentType, body.note));
     }
     return jsonResponse_({ error: 'Неизвестное действие: ' + body.action });
   } catch (err) {
