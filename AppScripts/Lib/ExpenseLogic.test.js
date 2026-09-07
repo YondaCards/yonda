@@ -44,6 +44,6 @@ test('buildTelegramExpenseMessage formats category, amount, and account', () => 
   const fmt = (n) => Math.round(n).toLocaleString('ru-RU') + ' сум';
   const msg = buildTelegramExpenseMessage('Услуги полиграфии', 192000, 'Личная карта', fmt);
   assert.match(msg, /Категория: Услуги полиграфии/);
-  assert.match(msg, /Сумма: 192\s000 сум/);
+  assert.match(msg, /Сумма: 192 000 сум/);
   assert.match(msg, /Счёт: Личная карта/);
 });
