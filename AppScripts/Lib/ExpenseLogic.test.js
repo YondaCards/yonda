@@ -22,6 +22,22 @@ test('validateExpenseInput rejects a non-numeric amount', () => {
   assert.equal(validateExpenseInput('Прочее', 'abc', 'Наличка'), 'Сумма расхода должна быть больше нуля.');
 });
 
+test('validateExpenseInput rejects an empty-string amount', () => {
+  assert.equal(validateExpenseInput('Прочее', '', 'Наличка'), 'Сумма расхода должна быть больше нуля.');
+});
+
+test('validateExpenseInput rejects a null amount', () => {
+  assert.equal(validateExpenseInput('Прочее', null, 'Наличка'), 'Сумма расхода должна быть больше нуля.');
+});
+
+test('validateExpenseInput rejects an undefined amount', () => {
+  assert.equal(validateExpenseInput('Прочее', undefined, 'Наличка'), 'Сумма расхода должна быть больше нуля.');
+});
+
+test('validateExpenseInput rejects a non-finite amount', () => {
+  assert.equal(validateExpenseInput('Прочее', Infinity, 'Наличка'), 'Сумма расхода должна быть больше нуля.');
+});
+
 test('validateExpenseInput accepts valid input', () => {
   assert.equal(validateExpenseInput('Прочее', 192000, 'Наличка'), null);
 });
@@ -40,10 +56,14 @@ test('buildExpenseRow keeps a given note as-is', () => {
   );
 });
 
-test('buildTelegramExpenseMessage formats category, amount, and account', () => {
+test('buildTelegramExpenseMessage formats the full message without a note', () => {
   const fmt = (n) => Math.round(n).toLocaleString('ru-RU') + ' сум';
   const msg = buildTelegramExpenseMessage('Услуги полиграфии', 192000, 'Личная карта', fmt);
-  assert.match(msg, /Категория: Услуги полиграфии/);
-  assert.match(msg, /Сумма: 192 000 сум/);
-  assert.match(msg, /Счёт: Личная карта/);
+  assert.equal(msg, '💸 <b>Расход</b>\nКатегория: Услуги полиграфии\nСумма: 192 000 сум\nСчёт: Личная карта');
+});
+
+test('buildTelegramExpenseMessage appends the note when present', () => {
+  const fmt = (n) => Math.round(n).toLocaleString('ru-RU') + ' сум';
+  const msg = buildTelegramExpenseMessage('Аренда', 1500000, 'Расчётный счёт', fmt, 'Аренда за сентябрь');
+  assert.equal(msg, '💸 <b>Расход</b>\nКатегория: Аренда\nСумма: 1 500 000 сум\nСчёт: Расчётный счёт\nПримечание: Аренда за сентябрь');
 });

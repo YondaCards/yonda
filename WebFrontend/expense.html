@@ -33,6 +33,17 @@
 
     function fmtSum(n) { return Math.round(n).toLocaleString('ru-RU') + ' сум'; }
 
+    function isAmountValid() {
+      var amt = Number(state.amount);
+      return state.amount !== '' && isFinite(amt) && amt > 0;
+    }
+
+    function syncSubmitEnabled() {
+      var btn = document.getElementById('submit-expense');
+      if (!btn) return;
+      btn.disabled = !state.category || !state.paymentType || !isAmountValid() || state.submitting;
+    }
+
     function renderForm() {
       var categorySection;
       if (state.categoriesError) {
@@ -76,7 +87,7 @@
             '<input class="name-input" style="width:100%;" type="text" placeholder="Необязательно" id="note-input" value="' + escapeAttr(state.note) + '">' +
           '</div>' +
           '<div class="footer">' +
-            '<button class="primary-btn" id="submit-expense"' + (!state.category || !state.paymentType || state.submitting ? ' disabled' : '') + '>' + (state.submitting ? 'Записываем…' : 'Записать расход') + '</button>' +
+            '<button class="primary-btn" id="submit-expense"' + (!state.category || !state.paymentType || !isAmountValid() || state.submitting ? ' disabled' : '') + '>' + (state.submitting ? 'Записываем…' : 'Записать расход') + '</button>' +
           '</div>' +
         '</div>';
     }
@@ -99,7 +110,7 @@
       // solves both: focus survives typing, and any later chip-triggered
       // render restores the typed value via the value="..." attribute above.
       var amountInput = document.getElementById('amount-input');
-      if (amountInput) amountInput.oninput = function () { state.amount = amountInput.value; };
+      if (amountInput) amountInput.oninput = function () { state.amount = amountInput.value; syncSubmitEnabled(); };
       var noteInput = document.getElementById('note-input');
       if (noteInput) noteInput.oninput = function () { state.note = noteInput.value; };
 
@@ -109,6 +120,8 @@
       if (retryCategories) retryCategories.onclick = loadCategories;
       var retryPaymentTypes = document.getElementById('retry-payment-types');
       if (retryPaymentTypes) retryPaymentTypes.onclick = loadPaymentTypes;
+
+      syncSubmitEnabled();
     }
 
     function onSubmitExpense() {

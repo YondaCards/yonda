@@ -6,7 +6,7 @@ function validateExpenseInput(category, amount, paymentType) {
   if (!category) return 'Не выбрана категория расхода.';
   if (!paymentType) return 'Не выбран тип оплаты.';
   const num = Number(amount);
-  if (isNaN(num) || num <= 0) {
+  if (!isFinite(num) || num <= 0) {
     return 'Сумма расхода должна быть больше нуля.';
   }
   return null;
@@ -16,11 +16,12 @@ function buildExpenseRow(category, amount, account, note) {
   return { category: category, amount: amount, account: account, note: note || '' };
 }
 
-function buildTelegramExpenseMessage(category, amount, account, fmt) {
+function buildTelegramExpenseMessage(category, amount, account, fmt, note) {
   const msg = '💸 <b>Расход</b>\n' +
     'Категория: ' + category + '\n' +
     'Сумма: ' + fmt(amount) + '\n' +
-    'Счёт: ' + account;
+    'Счёт: ' + account +
+    (note ? '\nПримечание: ' + note : '');
   // Normalize non-breaking spaces to regular spaces for consistent regex matching
   return msg.replace(/ /g, ' ');
 }

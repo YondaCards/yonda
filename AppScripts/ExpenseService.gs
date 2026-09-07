@@ -48,7 +48,7 @@ function submitExpense(category, amount, paymentType, note) {
   const row = buildExpenseRow(category, Number(amount), account, note);
   appendExpenseRow_(ss, row.category, row.amount, row.account, row.note);
 
-  sendTelegram(buildTelegramExpenseMessage(row.category, row.amount, row.account, fmt));
+  sendTelegram(buildTelegramExpenseMessage(row.category, row.amount, row.account, fmt, row.note));
 
   return { written: true };
 }
