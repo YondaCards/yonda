@@ -45,12 +45,12 @@ function getProductsSnapshot(location) {
   return items;
 }
 
-function submitInventory(kind, location, counts, newItems, isSaleReconciliation) {
+function submitInventory(kind, location, counts, newItems, isSaleReconciliation, saleDate) {
   const dateStr = Utilities.formatDate(new Date(), 'Asia/Tashkent', 'dd.MM.yyyy');
   const ss = SpreadsheetApp.getActiveSpreadsheet();
 
   if (kind === 'materials') return submitMaterialsInventory_(ss, counts, newItems, dateStr);
-  if (kind === 'products') return submitProductsInventory_(ss, location, counts, newItems, dateStr, isSaleReconciliation);
+  if (kind === 'products') return submitProductsInventory_(ss, location, counts, newItems, dateStr, isSaleReconciliation, saleDate);
   throw new Error('Неизвестный тип инвентаризации: ' + kind);
 }
 
@@ -104,10 +104,10 @@ const FORM_COL_KOLICHESTVO_PEREMESCHENIE = 26;  // Z: Количество (пе
 const FORM_COL_OTKUDA = 27;                     // AA: Откуда
 const FORM_COL_KUDA = 28;                       // AB: Куда
 
-function appendGoodsRow_(ss, name, quantity, vidDeistviya, from, to) {
+function appendGoodsRow_(ss, name, quantity, vidDeistviya, from, to, dateOverride) {
   const formSheet = ss.getSheetByName(SHEET_FORM);
   const row = [];
-  row[0] = new Date(); // A: Отметка времени
+  row[0] = dateOverride || new Date(); // A: Отметка времени
   row[FORM_COL_TIP_ZAPISI - 1] = 'Учет товаров';
   row[FORM_COL_VID_DEISTVIYA - 1] = vidDeistviya;
   row[FORM_COL_TOVAR_PEREMESCHENIE - 1] = name;
@@ -117,10 +117,19 @@ function appendGoodsRow_(ss, name, quantity, vidDeistviya, from, to) {
   formSheet.appendRow(row);
 }
 
-function submitProductsInventory_(ss, location, counts, newItems, dateStr, isSaleReconciliation) {
+function submitProductsInventory_(ss, location, counts, newItems, dateStr, isSaleReconciliation, saleDate) {
   const stockSheet = ss.getSheetByName(SHEET_GOODS_STOCK);
   const byName = {};
   getProductsSnapshot(location).forEach((it) => { byName[it.name] = it; });
+
+  // Postcard reconciliation usually happens days after the exhibition it's
+  // reconciling — dating the resulting rows "today" (the count's date, not
+  // the sale's) would put that revenue/movement on the wrong day in every
+  // report keyed off Отметка времени. saleDate is an HTML <input type="date">
+  // value ("YYYY-MM-DD"); parsed at local noon to dodge a UTC-midnight /
+  // timezone rollover shifting it to the wrong calendar day. Only applies
+  // when actually reconciling — a normal stocktake still timestamps "now".
+  const recordDate = (isSaleReconciliation && saleDate) ? new Date(saleDate + 'T12:00:00') : null;
 
   let written = 0;
 
@@ -132,9 +141,9 @@ function submitProductsInventory_(ss, location, counts, newItems, dateStr, isSal
     const isPostcard = POSTCARD_VARIETY_NAMES.indexOf(c.name) !== -1 && location === 'Основной склад';
     const classification = classifyGoodsDelta(delta, isPostcard, !!isSaleReconciliation);
     const row = buildGoodsLedgerRow(delta, location, dateStr, classification.type);
-    appendGoodsRow_(ss, c.name, row.quantity, classification.type, row.from, row.to);
+    appendGoodsRow_(ss, c.name, row.quantity, classification.type, row.from, row.to, recordDate);
     if (classification.mirrorToAggregate) {
-      appendGoodsRow_(ss, POSTCARD_AGGREGATE_NAME, row.quantity, 'Инвентаризация', row.from, row.to);
+      appendGoodsRow_(ss, POSTCARD_AGGREGATE_NAME, row.quantity, 'Инвентаризация', row.from, row.to, recordDate);
     }
     written++;
   });

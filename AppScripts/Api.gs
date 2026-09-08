@@ -44,7 +44,7 @@ function handleApiPost_(e) {
       return jsonResponse_({ error: auth.reason });
     }
     if (body.action === 'submitInventory') {
-      return jsonResponse_(submitInventory(body.kind, body.location, body.counts, body.newItems, body.isSaleReconciliation));
+      return jsonResponse_(submitInventory(body.kind, body.location, body.counts, body.newItems, body.isSaleReconciliation, body.saleDate));
     }
     if (body.action === 'submitSale') {
       return jsonResponse_(submitSale(body.items, body.paymentType, body.totalOverride));
