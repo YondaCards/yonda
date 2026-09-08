@@ -7,15 +7,17 @@ const FORM_COL_OPISANIE_RASHOD = 10;   // J: Примечание (расход)
 // pattern as getLocations()/getPaymentTypes(), so the list stays in sync with
 // the sheet without a code change.
 function getExpenseCategories() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(SHEET_REFERENCES);
-  if (!sheet) return [];
-  const lastRow = sheet.getLastRow();
-  if (lastRow < 2) return [];
-  const data = sheet.getRange(2, 7, lastRow - 1, 1).getValues(); // G
-  return data
-    .filter(function (row) { return row[0]; })
-    .map(function (row) { return row[0]; });
+  return getCachedReferenceData_('refcache_expenseCategories', function () {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName(SHEET_REFERENCES);
+    if (!sheet) return [];
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) return [];
+    const data = sheet.getRange(2, 7, lastRow - 1, 1).getValues(); // G
+    return data
+      .filter(function (row) { return row[0]; })
+      .map(function (row) { return row[0]; });
+  });
 }
 
 function appendExpenseRow_(ss, category, amount, account, note) {

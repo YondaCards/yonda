@@ -282,15 +282,17 @@ function getPriceByProduct(productName) {
 // which used to run once per product when called in a loop (e.g. from
 // getSalesCatalog over the whole catalog).
 function getPriceMap_() {
-  const ss    = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(SHEET_REFERENCES);
-  const map = {};
-  if (!sheet) return map;
-  const data = sheet.getDataRange().getValues();
-  for (let i = 1; i < data.length; i++) {
-    if (data[i][0]) map[data[i][0]] = Number(data[i][1]) || 0;
-  }
-  return map;
+  return getCachedReferenceData_('refcache_priceMap', function () {
+    const ss    = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName(SHEET_REFERENCES);
+    const map = {};
+    if (!sheet) return map;
+    const data = sheet.getDataRange().getValues();
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][0]) map[data[i][0]] = Number(data[i][1]) || 0;
+    }
+    return map;
+  });
 }
 
 function sendTelegram(text) {

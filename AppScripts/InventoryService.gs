@@ -1,16 +1,42 @@
+// Read-through cache for reference data that only a human editing a sheet by
+// hand ever changes (locations, payment types, expense categories, price
+// list) — never for live stock quantities. Backed by PropertiesService, not
+// CacheService, because it has to persist indefinitely (no built-in TTL),
+// not just up to CacheService's 6-hour cap: the reference sheets this covers
+// change so rarely that "cache forever until told otherwise" is the right
+// default. Triggers.gs clears these keys on an onEdit to Справочники (plus a
+// once-daily safety net), so a stale read here means the invalidation path
+// itself needs checking, not this helper.
+function getCachedReferenceData_(key, computeFn) {
+  const props = PropertiesService.getScriptProperties();
+  const cached = props.getProperty(key);
+  if (cached) return JSON.parse(cached);
+  const value = computeFn();
+  props.setProperty(key, JSON.stringify(value));
+  return value;
+}
+
+function invalidateReferenceCache_() {
+  const props = PropertiesService.getScriptProperties();
+  ['refcache_locations', 'refcache_paymentTypes', 'refcache_expenseCategories', 'refcache_priceMap']
+    .forEach(function (key) { props.deleteProperty(key); });
+}
+
 function getLocations() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(SHEET_GOODS_STOCK);
-  const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  const totalColIndex = header.indexOf('Итого'); // 0-based; -1 if absent
-  const scanEnd = totalColIndex > 0 ? totalColIndex : header.length;
-  const locations = [];
-  for (let c = 1; c < scanEnd; c++) {
-    const name = header[c];
-    if (!name) continue;
-    locations.push(name);
-  }
-  return locations;
+  return getCachedReferenceData_('refcache_locations', function () {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName(SHEET_GOODS_STOCK);
+    const header = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    const totalColIndex = header.indexOf('Итого'); // 0-based; -1 if absent
+    const scanEnd = totalColIndex > 0 ? totalColIndex : header.length;
+    const locations = [];
+    for (let c = 1; c < scanEnd; c++) {
+      const name = header[c];
+      if (!name) continue;
+      locations.push(name);
+    }
+    return locations;
+  });
 }
 
 function getMaterialsSnapshot() {
@@ -327,15 +353,17 @@ function getSalesCatalog() {
 // "Операции"). These are deliberately not the same string — the cashier picks
 // by payment type, but the ledger needs the account it maps to.
 function getPaymentTypes() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(SHEET_REFERENCES);
-  if (!sheet) return [];
-  const lastRow = sheet.getLastRow();
-  if (lastRow < 2) return [];
-  const data = sheet.getRange(2, 4, lastRow - 1, 2).getValues(); // D:E
-  return data
-    .filter(function (row) { return row[0]; })
-    .map(function (row) { return { type: row[0], account: row[1] }; });
+  return getCachedReferenceData_('refcache_paymentTypes', function () {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName(SHEET_REFERENCES);
+    if (!sheet) return [];
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) return [];
+    const data = sheet.getRange(2, 4, lastRow - 1, 2).getValues(); // D:E
+    return data
+      .filter(function (row) { return row[0]; })
+      .map(function (row) { return { type: row[0], account: row[1] }; });
+  });
 }
 
 function submitSale(items, paymentType, totalOverride) {
