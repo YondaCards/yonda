@@ -274,14 +274,23 @@ if (ordersSheet) {
 // ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
 // ──────────────────────────────────────────────────────────────
 function getPriceByProduct(productName) {
+  return getPriceMap_()[productName] || 0;
+}
+
+// Справочники columns A:B (product name -> price). Reads the sheet once and
+// returns a name->price lookup, instead of the full-sheet scan this replaced
+// which used to run once per product when called in a loop (e.g. from
+// getSalesCatalog over the whole catalog).
+function getPriceMap_() {
   const ss    = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(SHEET_REFERENCES);
-  if (!sheet) return 0;
-  const data  = sheet.getDataRange().getValues();
+  const map = {};
+  if (!sheet) return map;
+  const data = sheet.getDataRange().getValues();
   for (let i = 1; i < data.length; i++) {
-    if (data[i][0] === productName) return Number(data[i][1]) || 0;
+    if (data[i][0]) map[data[i][0]] = Number(data[i][1]) || 0;
   }
-  return 0;
+  return map;
 }
 
 function sendTelegram(text) {

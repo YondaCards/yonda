@@ -305,10 +305,11 @@ function appendIncomeRow_(ss, amount, account, category, note) {
 }
 
 function getSalesCatalog() {
+  const priceMap = getPriceMap_();
   return getProductsSnapshot('Основной склад')
     .filter(function (item) { return POSTCARD_VARIETY_NAMES.indexOf(item.name) === -1; })
     .map(function (item) {
-      return { name: item.name, current: item.current, price: getPriceByProduct(item.name) };
+      return { name: item.name, current: item.current, price: priceMap[item.name] || 0 };
     });
 }
 
