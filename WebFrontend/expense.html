@@ -171,7 +171,7 @@
     function loadCategories() {
       state.categoriesError = null;
       render();
-      apiGet('getExpenseCategories', {})
+      apiGetCached('getExpenseCategories', {}, 'yonda_ref_expenseCategories')
         .then(function (categories) { state.categories = categories; render(); })
         .catch(function (err) {
           if (isTokenAuthError(err)) { onError(err); return; }
@@ -183,7 +183,7 @@
     function loadPaymentTypes() {
       state.paymentTypesError = null;
       render();
-      apiGet('getPaymentTypes', {})
+      apiGetCached('getPaymentTypes', {}, 'yonda_ref_paymentTypes')
         .then(function (types) { state.paymentTypes = types; render(); })
         .catch(function (err) {
           if (isTokenAuthError(err)) { onError(err); return; }

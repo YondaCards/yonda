@@ -51,7 +51,7 @@
       document.getElementById('pick-products').onclick = function () {
         state.type = 'products'; state.facts = {}; state.customItems = [];
         state.screen = 'location'; state.locations = null; render();
-        apiGet('getLocations', {}).then(function (locations) { state.locations = locations; render(); }).catch(onError);
+        apiGetCached('getLocations', {}, 'yonda_ref_locations').then(function (locations) { state.locations = locations; render(); }).catch(onError);
       };
     }
 
