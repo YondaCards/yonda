@@ -150,6 +150,8 @@ const FORM_COL_KOLICHESTVO_POPOLNENIE = 23;     // W: Количество (по
 // Производство/Списание(продажа)/Перемещение — количество движения, не факт.
 // Как и submitInventory, пишет только строки в "Ответы на форму (1)".
 function submitStockMovement(action, location, from, to, items, newItems) {
+  // Production always adds to the main warehouse; don't trust a client-supplied location.
+  if (action === 'production') location = 'Основной склад';
   const validationError = validateMovement(action, location, from, to);
   if (validationError) throw new Error(validationError);
   let rows = buildMovementRows(action, location, from, to, items);
