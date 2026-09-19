@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { computeDelta, buildMaterialLedgerRow, buildGoodsLedgerRow, classifyGoodsDelta } = require('./InventoryLogic.js');
+const { computeDelta, buildMaterialLedgerRow, buildGoodsLedgerRow, classifyGoodsDelta, buildMovementRows, validateMovement } = require('./InventoryLogic.js');
 
 test('computeDelta returns null for blank input', () => {
   assert.equal(computeDelta(10, ''), null);
@@ -73,4 +73,45 @@ test('classifyGoodsDelta: negative delta + reconciliation OFF is a loss that sti
 
 test('classifyGoodsDelta: negative delta on a regular product is unaffected by the toggle', () => {
   assert.deepEqual(classifyGoodsDelta(-3, false, true), { type: 'Инвентаризация', mirrorToAggregate: false });
+});
+
+test('validateMovement: rejects unknown action', () => {
+  assert.match(validateMovement('foo', 'A', '', ''), /действие/i);
+});
+
+test('validateMovement: transfer needs two different warehouses', () => {
+  assert.match(validateMovement('transfer', '', '', 'B'), /./);
+  assert.match(validateMovement('transfer', '', 'A', ''), /./);
+  assert.match(validateMovement('transfer', '', 'A', 'A'), /./);
+  assert.equal(validateMovement('transfer', '', 'A', 'B'), null);
+});
+
+test('validateMovement: production and writeoff need a location', () => {
+  assert.match(validateMovement('production', '', '', ''), /./);
+  assert.match(validateMovement('writeoff', '', '', ''), /./);
+  assert.equal(validateMovement('production', 'A', '', ''), null);
+  assert.equal(validateMovement('writeoff', 'A', '', ''), null);
+});
+
+test('buildMovementRows: skips blank, zero, non-numeric and negative quantities', () => {
+  const rows = buildMovementRows('writeoff', 'A', '', '', [
+    { name: 'x', quantity: '' }, { name: 'y', quantity: '0' },
+    { name: 'z', quantity: 'abc' }, { name: 'w', quantity: '-2' },
+  ]);
+  assert.deepEqual(rows, []);
+});
+
+test('buildMovementRows: writeoff is a Продажа from the location', () => {
+  assert.deepEqual(buildMovementRows('writeoff', 'A', '', '', [{ name: 'x', quantity: '3' }]),
+    [{ name: 'x', quantity: 3, vidDeistviya: 'Продажа', from: 'A', to: '' }]);
+});
+
+test('buildMovementRows: transfer is a Перемещение from -> to', () => {
+  assert.deepEqual(buildMovementRows('transfer', '', 'A', 'B', [{ name: 'x', quantity: '2' }]),
+    [{ name: 'x', quantity: 2, vidDeistviya: 'Перемещение', from: 'A', to: 'B' }]);
+});
+
+test('buildMovementRows: production is a Пополнение/Производство into the location', () => {
+  assert.deepEqual(buildMovementRows('production', 'A', '', '', [{ name: 'x', quantity: '5' }]),
+    [{ name: 'x', quantity: 5, vidDeistviya: 'Пополнение', opType: 'Производство', from: '', to: 'A' }]);
 });

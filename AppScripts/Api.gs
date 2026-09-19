@@ -49,6 +49,9 @@ function handleApiPost_(e) {
     if (body.action === 'submitInventory') {
       return jsonResponse_(submitInventory(body.kind, body.location, body.counts, body.newItems, body.isSaleReconciliation, body.saleDate));
     }
+    if (body.action === 'submitStockMovement') {
+      return jsonResponse_(submitStockMovement(body.movement, body.location, body.from, body.to, body.items));
+    }
     if (body.action === 'submitSale') {
       return jsonResponse_(submitSale(body.items, body.paymentType, body.totalOverride));
     }

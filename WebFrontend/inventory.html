@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Yonda — Инвентаризация</title>
+<title>Yonda — Учет товаров</title>
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -18,14 +18,129 @@
       return d.getFullYear() + '-' + mm + '-' + dd;
     }
 
-    var state = { screen: 'type', type: null, location: null, locations: null, items: null, facts: {}, customItems: [], changes: [], written: 0, isSaleReconciliation: false, saleReconciliationDate: todayIso() };
+    var ACTION_TITLES = { inventory: 'Инвентаризация', production: 'Производство', writeoff: 'Списание', transfer: 'Перемещение' };
+    var ACTION_QTY_LABELS = { production: 'Произведено', writeoff: 'Списано', transfer: 'Переместить' };
+    function initialState() {
+      return { screen: 'action', action: null, type: null, location: null, from: '', to: '', locations: null, items: null, facts: {}, customItems: [], changes: [], written: 0, isSaleReconciliation: false, saleReconciliationDate: todayIso() };
+    }
+    var state = initialState();
 
     function render() {
       var app = document.getElementById('app');
+      if (state.screen === 'action') { app.innerHTML = renderAction(); bindAction(); return; }
+      if (state.screen === 'transferpick') { app.innerHTML = renderTransferPick(); bindTransferPick(); return; }
+      if (state.screen === 'moveitems') { app.innerHTML = renderMoveItems(); bindMoveItems(); return; }
       if (state.screen === 'type') { app.innerHTML = renderType(); bindType(); return; }
       if (state.screen === 'location') { app.innerHTML = renderLocation(); bindLocation(); return; }
       if (state.screen === 'counting') { app.innerHTML = renderCounting(); bindCounting(); return; }
       if (state.screen === 'confirm') { app.innerHTML = renderConfirm(); bindConfirm(); return; }
+    }
+
+    function renderAction() {
+      var order = ['inventory', 'production', 'writeoff', 'transfer'];
+      var hints = { inventory: 'Сверить фактические остатки', production: 'Приход произведённых товаров', writeoff: 'Списание (продажа) со склада', transfer: 'Между складами' };
+      var btns = '';
+      order.forEach(function (a) {
+        btns += '<button class="card-btn" data-action="' + a + '"><div style="flex:1;"><div style="font-size:16px;font-weight:700;">' + ACTION_TITLES[a] + '</div>' +
+          '<div style="font-size:13px;color:oklch(0.55 0.01 250);">' + hints[a] + '</div></div></button>';
+      });
+      return '<div class="screen" style="padding:28px 20px 24px;gap:28px;">' +
+        '<div><div style="font-size:12.5px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:oklch(0.55 0.01 250);">Yonda · Учет товаров</div>' +
+        '<div style="font-size:23px;font-weight:800;">Что делаем?</div></div>' +
+        '<div style="display:flex;flex-direction:column;gap:12px;">' + btns + '</div></div>';
+    }
+
+    function bindAction() {
+      document.querySelectorAll('[data-action]').forEach(function (btn) {
+        btn.onclick = function () {
+          var a = btn.getAttribute('data-action');
+          state = initialState(); state.action = a;
+          if (a === 'inventory') { state.screen = 'type'; render(); return; }
+          state.screen = a === 'transfer' ? 'transferpick' : 'location';
+          state.locations = null; render();
+          apiGetCached('getLocations', {}, 'yonda_ref_locations').then(function (locations) { state.locations = locations; render(); }).catch(onError);
+        };
+      });
+    }
+
+    function loadMovementItems(loc) {
+      state.items = null; state.facts = {}; state.screen = 'moveitems'; render();
+      apiGet('getProductsSnapshot', { location: loc }).then(function (items) { state.items = items; render(); }).catch(onError);
+    }
+
+    function renderTransferPick() {
+      var header = '<div class="header"><button class="back-btn" id="back-to-action">' + backIcon() + '</button><div class="title">Перемещение</div></div>';
+      if (state.locations === null) return '<div class="screen">' + header + '<div class="spinner">Загрузка…</div></div>';
+      function opts(sel) {
+        var o = '<option value="">— выберите —</option>';
+        state.locations.forEach(function (l) { o += '<option value="' + escapeAttr(l) + '"' + (l === sel ? ' selected' : '') + '>' + escapeHtml(l) + '</option>'; });
+        return o;
+      }
+      return '<div class="screen">' + header +
+        '<div class="list" style="gap:14px;padding:16px 20px;">' +
+          '<label style="font-size:13px;font-weight:600;">Откуда</label><select id="transfer-from" class="name-input">' + opts(state.from) + '</select>' +
+          '<label style="font-size:13px;font-weight:600;">Куда</label><select id="transfer-to" class="name-input">' + opts(state.to) + '</select>' +
+        '</div>' +
+        '<div class="footer"><button class="primary-btn" id="transfer-next">Далее</button></div></div>';
+    }
+
+    function bindTransferPick() {
+      document.getElementById('back-to-action').onclick = function () { state = initialState(); render(); };
+      if (state.locations === null) return;
+      document.getElementById('transfer-from').onchange = function (e) { state.from = e.target.value; };
+      document.getElementById('transfer-to').onchange = function (e) { state.to = e.target.value; };
+      document.getElementById('transfer-next').onclick = function () {
+        if (!state.from || !state.to) { alert('Выберите склады «Откуда» и «Куда»'); return; }
+        if (state.from === state.to) { alert('Склады «Откуда» и «Куда» должны различаться'); return; }
+        loadMovementItems(state.from);
+      };
+    }
+
+    function renderMoveItems() {
+      var subtitle = state.action === 'transfer' ? (state.from + ' → ' + state.to) : state.location;
+      var header = '<div class="header"><button class="back-btn" id="back-from-move">' + backIcon() + '</button><div><div class="title">' + ACTION_TITLES[state.action] + '</div><div class="subtitle">' + escapeHtml(subtitle) + '</div></div></div>';
+      if (state.items === null) return '<div class="screen">' + header + '<div class="spinner">Загрузка…</div></div>';
+      var rows = '';
+      state.items.forEach(function (item) {
+        var q = state.facts[item.name] === undefined ? '' : state.facts[item.name];
+        rows += '<div class="row"><div style="flex:1;"><div class="row-name">' + escapeHtml(item.name) + '</div>' +
+          '<div class="row-stock">Сейчас: ' + escapeHtml(String(item.current)) + '</div></div>' +
+          '<input class="fact-input" type="number" inputmode="decimal" min="0" placeholder="—" data-qty="' + escapeAttr(item.name) + '" value="' + escapeAttr(q) + '"></div>';
+      });
+      return '<div class="screen">' + header + '<div style="padding:8px 20px 0;font-size:13px;color:oklch(0.55 0.01 250);">' + ACTION_QTY_LABELS[state.action] + ' (количество):</div>' +
+        '<div class="list">' + rows + '</div>' +
+        '<div class="footer"><button class="primary-btn" id="save-move">Сохранить</button></div></div>';
+    }
+
+    function bindMoveItems() {
+      document.getElementById('back-from-move').onclick = function () {
+        state.items = null; state.facts = {};
+        state.screen = state.action === 'transfer' ? 'transferpick' : 'location'; render();
+      };
+      if (state.items === null) return;
+      document.querySelectorAll('[data-qty]').forEach(function (el) {
+        el.onchange = function () { state.facts[el.getAttribute('data-qty')] = el.value; };
+      });
+      document.getElementById('save-move').onclick = onSaveMovement;
+    }
+
+    function onSaveMovement() {
+      var items = [];
+      state.items.forEach(function (item) {
+        var raw = state.facts[item.name];
+        if (raw === undefined || raw === '' || isNaN(Number(raw)) || Number(raw) <= 0) return;
+        items.push({ name: item.name, quantity: raw });
+      });
+      if (items.length === 0) { alert('Введите количество хотя бы для одного товара'); return; }
+      state.changes = items.map(function (i) { return { name: i.name, label: (state.action === 'writeoff' ? '−' : '+') + i.quantity }; });
+      var btn = document.getElementById('save-move');
+      btn.setAttribute('disabled', 'true'); btn.textContent = 'Сохраняем…';
+      apiPost('submitStockMovement', { movement: state.action, location: state.location || '', from: state.from, to: state.to, items: items })
+        .then(function (result) {
+          state.written = result && typeof result.written === 'number' ? result.written : items.length;
+          state.screen = 'confirm'; render();
+        })
+        .catch(function (err) { btn.removeAttribute('disabled'); btn.textContent = 'Сохранить'; onError(err); });
     }
 
     function renderType() {
@@ -33,6 +148,7 @@
         '<div class="screen" style="padding:28px 20px 24px;gap:28px;">' +
           '<div><div style="font-size:12.5px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:oklch(0.55 0.01 250);">Yonda · Инвентаризация</div>' +
           '<div style="font-size:23px;font-weight:800;">Что считаем?</div></div>' +
+          '<button class="back-btn" id="back-to-action" style="align-self:flex-start;">' + backIcon() + '</button>' +
           '<div style="display:flex;flex-direction:column;gap:12px;">' +
             '<button class="card-btn" id="pick-materials"><div style="flex:1;"><div style="font-size:16px;font-weight:700;">Материалы</div>' +
             '<div style="font-size:13px;color:oklch(0.55 0.01 250);">Склад материалов</div></div></button>' +
@@ -43,6 +159,7 @@
     }
 
     function bindType() {
+      document.getElementById('back-to-action').onclick = function () { state = initialState(); render(); };
       document.getElementById('pick-materials').onclick = function () {
         state.type = 'materials'; state.facts = {}; state.customItems = [];
         state.screen = 'counting'; state.items = null; render();
@@ -71,11 +188,15 @@
     }
 
     function bindLocation() {
-      document.getElementById('back-to-type').onclick = function () { state.screen = 'type'; state.type = null; render(); };
+      document.getElementById('back-to-type').onclick = function () {
+        if (state.action === 'inventory') { state.screen = 'type'; state.type = null; } else { state = initialState(); }
+        render();
+      };
       if (state.locations === null) return;
       document.querySelectorAll('[data-loc]').forEach(function (btn) {
         btn.onclick = function () {
           state.location = btn.getAttribute('data-loc');
+          if (state.action !== 'inventory') { loadMovementItems(state.location); return; }
           state.facts = {}; state.customItems = [];
           state.screen = 'counting'; state.items = null; render();
           apiGet('getProductsSnapshot', { location: state.location }).then(function (items) { state.items = items; render(); }).catch(onError);
@@ -209,12 +330,12 @@
         rows += '<div class="change-row"><div style="flex:1;font-size:14px;font-weight:600;">' + escapeHtml(chg.name) + '</div>' +
           '<div style="font-size:14px;font-weight:800;color:oklch(0.45 0.14 220);">' + escapeHtml(chg.label) + '</div></div>';
       });
-      var summary = state.written === 0 ? 'Расхождений не найдено' : 'Обновлено позиций: ' + state.written;
+      var summary = (state.written === 0 && state.action === 'inventory') ? 'Расхождений не найдено' : 'Обновлено позиций: ' + state.written;
       return '' +
         '<div class="screen">' +
           '<div style="display:flex;flex-direction:column;align-items:center;gap:10px;padding:40px 20px 22px;">' +
             '<div style="width:52px;height:52px;border-radius:50%;background:oklch(0.93 0.05 145);display:flex;align-items:center;justify-content:center;">' + checkIcon() + '</div>' +
-            '<div style="font-size:18px;font-weight:800;">Инвентаризация сохранена</div>' +
+            '<div style="font-size:18px;font-weight:800;">' + (state.action === 'inventory' ? 'Инвентаризация сохранена' : ACTION_TITLES[state.action] + ' сохранено') + '</div>' +
             '<div style="font-size:13px;color:oklch(0.55 0.01 250);text-align:center;">' + summary + '</div>' +
           '</div>' +
           '<div class="list" style="gap:8px;">' + rows + '</div>' +
@@ -224,7 +345,7 @@
 
     function bindConfirm() {
       document.getElementById('finish').onclick = function () {
-        state = { screen: 'type', type: null, location: null, locations: null, items: null, facts: {}, customItems: [], changes: [], written: 0, isSaleReconciliation: false, saleReconciliationDate: todayIso() };
+        state = initialState();
         render();
       };
     }

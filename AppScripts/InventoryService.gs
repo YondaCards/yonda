@@ -143,6 +143,35 @@ function appendGoodsRow_(ss, name, quantity, vidDeistviya, from, to, dateOverrid
   formSheet.appendRow(row);
 }
 
+const FORM_COL_TIP_OPERACII = 21;               // U: Тип операции (Пополнение)
+const FORM_COL_TOVAR_POPOLNENIE = 22;           // V: Товар (пополнение)
+const FORM_COL_KOLICHESTVO_POPOLNENIE = 23;     // W: Количество (пополнение)
+
+// Производство/Списание(продажа)/Перемещение — количество движения, не факт.
+// Как и submitInventory, пишет только строки в "Ответы на форму (1)".
+function submitStockMovement(action, location, from, to, items) {
+  const validationError = validateMovement(action, location, from, to);
+  if (validationError) throw new Error(validationError);
+  const rows = buildMovementRows(action, location, from, to, items);
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const formSheet = ss.getSheetByName(SHEET_FORM);
+  rows.forEach(function (r) {
+    if (r.vidDeistviya === 'Пополнение') {
+      const row = [];
+      row[0] = new Date();
+      row[FORM_COL_TIP_ZAPISI - 1] = 'Учет товаров';
+      row[FORM_COL_VID_DEISTVIYA - 1] = r.vidDeistviya;
+      row[FORM_COL_TIP_OPERACII - 1] = r.opType;
+      row[FORM_COL_TOVAR_POPOLNENIE - 1] = r.name;
+      row[FORM_COL_KOLICHESTVO_POPOLNENIE - 1] = r.quantity;
+      formSheet.appendRow(row);
+    } else {
+      appendGoodsRow_(ss, r.name, r.quantity, r.vidDeistviya, r.from, r.to);
+    }
+  });
+  return { written: rows.length };
+}
+
 function submitProductsInventory_(ss, location, counts, newItems, dateStr, isSaleReconciliation, saleDate) {
   const stockSheet = ss.getSheetByName(SHEET_GOODS_STOCK);
   const byName = {};
