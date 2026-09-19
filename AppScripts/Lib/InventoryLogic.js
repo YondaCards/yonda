@@ -36,6 +36,11 @@ function classifyGoodsDelta(delta, isPostcardVariety, isSaleReconciliation) {
   return { type: 'Инвентаризация', mirrorToAggregate: !!isPostcardVariety };
 }
 
+// "Склад товаров" carries a totals row labelled "Итого" in column A; it is not a product.
+function isSummaryRowName(name) {
+  return String(name).trim().toLowerCase() === 'итого';
+}
+
 // Returns a Russian error message, or null when the movement is valid.
 function validateMovement(action, location, from, to) {
   if (action === 'transfer') {
@@ -69,5 +74,5 @@ function buildMovementRows(action, location, from, to, items) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { computeDelta, buildMaterialLedgerRow, buildGoodsLedgerRow, classifyGoodsDelta, validateMovement, buildMovementRows };
+  module.exports = { computeDelta, buildMaterialLedgerRow, buildGoodsLedgerRow, classifyGoodsDelta, validateMovement, buildMovementRows, isSummaryRowName };
 }

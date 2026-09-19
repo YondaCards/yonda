@@ -50,6 +50,12 @@ function getMaterialsSnapshot() {
     .map((row) => ({ name: row[0], unit: row[1] || 'шт', current: Number(row[2]) || 0 }));
 }
 
+// "Склад товаров": row 1 = headers, row 2 = "Итого" totals row, products start at
+// row 3 (the ARRAYFORMULA spilling the product list lives in A3). Справочники
+// (price list) still starts at row 2, so its row N corresponds to Склад товаров
+// row N + 1.
+const GOODS_STOCK_FIRST_PRODUCT_ROW = 3;
+
 function getProductsSnapshot(location) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(SHEET_GOODS_STOCK);
@@ -59,13 +65,14 @@ function getProductsSnapshot(location) {
   if (colIndex < 1) throw new Error('Точка не найдена в Склад товаров: ' + location);
 
   const lastRow = sheet.getLastRow();
-  if (lastRow < 2) return [];
-  const names = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
-  const values = sheet.getRange(2, colIndex + 1, lastRow - 1, 1).getValues();
+  if (lastRow < GOODS_STOCK_FIRST_PRODUCT_ROW) return [];
+  const rowCount = lastRow - GOODS_STOCK_FIRST_PRODUCT_ROW + 1;
+  const names = sheet.getRange(GOODS_STOCK_FIRST_PRODUCT_ROW, 1, rowCount, 1).getValues();
+  const values = sheet.getRange(GOODS_STOCK_FIRST_PRODUCT_ROW, colIndex + 1, rowCount, 1).getValues();
 
   const items = [];
   for (let i = 0; i < names.length; i++) {
-    if (!names[i][0]) continue;
+    if (!names[i][0] || isSummaryRowName(names[i][0])) continue;
     items.push({ name: names[i][0], current: Number(values[i][0]) || 0 });
   }
   return items;
@@ -257,21 +264,23 @@ function addProductToCatalog_(ss, name) {
   // Справочники!A (Справочник цен) and let the ARRAYFORMULA extend on its own.
   const referencesSheet = ss.getSheetByName(SHEET_REFERENCES); // declared in Уведомления через ТГ-бот.js -- reused, not redeclared
   const priceListLastRow = findLastNonEmptyRow_(referencesSheet, 1); // column A of Справочник цен
-  const newRow = priceListLastRow + 1; // Справочники and Склад товаров are row-for-row aligned starting at row 2 (ARRAYFORMULA(IF(...))) -- no independent scan of Склад товаров needed; an earlier attempt scanned Склад товаров's own column A for the last non-blank row and landed on its trailing "Итого" summary row instead of the spilled name, corrupting it
+  const newRow = priceListLastRow + 1; // row in Справочники
+  const stockRow = newRow + 1; // Склад товаров is shifted by one: row 2 is the "Итого" row, products start at row 3 (ARRAYFORMULA(IF(...)) in A3) -- no independent scan of Склад товаров needed; an earlier attempt scanned Склад товаров's own column A for the last non-blank row and landed on its trailing "Итого" summary row instead of the spilled name, corrupting it
   referencesSheet.getRange(newRow, 1).setValue(name); // A: Название товара -- triggers Склад товаров's ARRAYFORMULA to extend
   SpreadsheetApp.flush();
 
   // Defensive check: confirm the array formula actually spilled the name where expected before writing anything else there.
-  const spilledName = stockSheet.getRange(newRow, 1).getValue();
+  const spilledName = stockSheet.getRange(stockRow, 1).getValue();
   if (spilledName !== name) {
-    throw new Error('Ожидал "' + name + '" в Склад товаров!A' + newRow + ' после добавления в Справочники, но нашёл "' + spilledName + '" -- проверь структуру листов вручную, ничего больше не менялось.');
+    throw new Error('Ожидал "' + name + '" в Склад товаров!A' + stockRow + ' после добавления в Справочники, но нашёл "' + spilledName + '" -- проверь структуру листов вручную, ничего больше не менялось.');
   }
 
   const stockLastCol = stockSheet.getLastColumn();
   const stockHeader = stockSheet.getRange(1, 1, 1, stockLastCol).getValues()[0];
   const stockTotalColIndex = stockHeader.indexOf('Итого') + 1; // 1-based; 0 if absent
   const stockCopyWidth = stockTotalColIndex > 0 ? stockTotalColIndex - 1 : stockLastCol - 1; // through Итого inclusive (B..Итого), or to the sheet's last column if Итого is absent
-  stockSheet.getRange(2, 2, 1, stockCopyWidth).copyTo(stockSheet.getRange(newRow, 2, 1, stockCopyWidth)); // B..Итого: formulas
+  // Template row is the first product row (3), NOT row 2, which now holds the "Итого" totals formulas.
+  stockSheet.getRange(GOODS_STOCK_FIRST_PRODUCT_ROW, 2, 1, stockCopyWidth).copyTo(stockSheet.getRange(stockRow, 2, 1, stockCopyWidth)); // B..Итого: formulas
 }
 
 function findLastNonEmptyRow_(sheet, col) {

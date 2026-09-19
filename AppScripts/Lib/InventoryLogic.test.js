@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { computeDelta, buildMaterialLedgerRow, buildGoodsLedgerRow, classifyGoodsDelta, buildMovementRows, validateMovement } = require('./InventoryLogic.js');
+const { computeDelta, buildMaterialLedgerRow, buildGoodsLedgerRow, classifyGoodsDelta, buildMovementRows, validateMovement, isSummaryRowName } = require('./InventoryLogic.js');
 
 test('computeDelta returns null for blank input', () => {
   assert.equal(computeDelta(10, ''), null);
@@ -114,4 +114,11 @@ test('buildMovementRows: transfer is a Перемещение from -> to', () =>
 test('buildMovementRows: production is a Пополнение/Производство into the location', () => {
   assert.deepEqual(buildMovementRows('production', 'A', '', '', [{ name: 'x', quantity: '5' }]),
     [{ name: 'x', quantity: 5, vidDeistviya: 'Пополнение', opType: 'Производство', from: '', to: 'A' }]);
+});
+
+test('isSummaryRowName: recognises the Итого totals row of Склад товаров', () => {
+  assert.equal(isSummaryRowName('Итого'), true);
+  assert.equal(isSummaryRowName(' итого '), true);
+  assert.equal(isSummaryRowName('Итого товаров'), false);
+  assert.equal(isSummaryRowName('Шодлик'), false);
 });
