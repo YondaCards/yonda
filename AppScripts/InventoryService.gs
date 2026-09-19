@@ -149,10 +149,28 @@ const FORM_COL_KOLICHESTVO_POPOLNENIE = 23;     // W: Количество (по
 
 // Производство/Списание(продажа)/Перемещение — количество движения, не факт.
 // Как и submitInventory, пишет только строки в "Ответы на форму (1)".
-function submitStockMovement(action, location, from, to, items) {
+function submitStockMovement(action, location, from, to, items, newItems) {
   const validationError = validateMovement(action, location, from, to);
   if (validationError) throw new Error(validationError);
-  const rows = buildMovementRows(action, location, from, to, items);
+  let rows = buildMovementRows(action, location, from, to, items);
+  if (action === 'production') {
+    // New items: only production can introduce a product that is not in the catalog yet.
+    const known = {};
+    getProductsSnapshot(location).forEach(function (it) { known[it.name] = true; });
+    const extra = [];
+    (newItems || []).forEach(function (ni) {
+      const name = String(ni.name || '').trim();
+      if (!name) return;
+      extra.push({ name: name, quantity: ni.quantity });
+    });
+    const extraRows = buildMovementRows(action, location, from, to, extra);
+    const ss0 = SpreadsheetApp.getActiveSpreadsheet();
+    const created = {};
+    extraRows.forEach(function (r) {
+      if (!known[r.name] && !created[r.name]) { addProductToCatalog_(ss0, r.name); created[r.name] = true; }
+    });
+    rows = rows.concat(extraRows);
+  }
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const formSheet = ss.getSheetByName(SHEET_FORM);
   rows.forEach(function (r) {
@@ -217,34 +235,41 @@ function submitProductsInventory_(ss, location, counts, newItems, dateStr, isSal
     const factNum = Number(ni.fact);
     if (Number.isNaN(factNum) || factNum === 0) return;
 
-    // "Склад товаров" column A is not a plain list — A2 holds a single ARRAYFORMULA
-    // that spills the product list down from Справочники!A2:A (Справочник цен).
-    // Writing directly into a new row of column A here blocks that spill range and
-    // breaks the sheet's whole product list. Instead, append the new name to
-    // Справочники!A (Справочник цен) and let the ARRAYFORMULA extend on its own.
-    const referencesSheet = ss.getSheetByName(SHEET_REFERENCES); // declared in Уведомления через ТГ-бот.js -- reused, not redeclared
-    const priceListLastRow = findLastNonEmptyRow_(referencesSheet, 1); // column A of Справочник цен
-    const newRow = priceListLastRow + 1; // Справочники and Склад товаров are row-for-row aligned starting at row 2 (ARRAYFORMULA(IF(...))) -- no independent scan of Склад товаров needed; an earlier attempt scanned Склад товаров's own column A for the last non-blank row and landed on its trailing "Итого" summary row instead of the spilled name, corrupting it
-    referencesSheet.getRange(newRow, 1).setValue(name); // A: Название товара -- triggers Склад товаров's ARRAYFORMULA to extend
-    SpreadsheetApp.flush();
-
-    // Defensive check: confirm the array formula actually spilled the name where expected before writing anything else there.
-    const spilledName = stockSheet.getRange(newRow, 1).getValue();
-    if (spilledName !== name) {
-      throw new Error('Ожидал "' + name + '" в Склад товаров!A' + newRow + ' после добавления в Справочники, но нашёл "' + spilledName + '" -- проверь структуру листов вручную, ничего больше не менялось.');
-    }
-
-    const stockLastCol = stockSheet.getLastColumn();
-    const stockHeader = stockSheet.getRange(1, 1, 1, stockLastCol).getValues()[0];
-    const stockTotalColIndex = stockHeader.indexOf('Итого') + 1; // 1-based; 0 if absent
-    const stockCopyWidth = stockTotalColIndex > 0 ? stockTotalColIndex - 1 : stockLastCol - 1; // through Итого inclusive (B..Итого), or to the sheet's last column if Итого is absent
-    stockSheet.getRange(2, 2, 1, stockCopyWidth).copyTo(stockSheet.getRange(newRow, 2, 1, stockCopyWidth)); // B..Итого: formulas
+    addProductToCatalog_(ss, name);
     const row = buildGoodsLedgerRow(factNum, location, dateStr);
     appendGoodsRow_(ss, name, row.quantity, 'Инвентаризация', row.from, row.to);
     written++;
   });
 
   return { written: written };
+}
+
+// Adds a brand-new product to the catalog (Справочники!A -> Склад товаров) and
+// returns nothing; caller writes the ledger row. Shared by inventory and production.
+function addProductToCatalog_(ss, name) {
+  const stockSheet = ss.getSheetByName(SHEET_GOODS_STOCK);
+  // "Склад товаров" column A is not a plain list — A2 holds a single ARRAYFORMULA
+  // that spills the product list down from Справочники!A2:A (Справочник цен).
+  // Writing directly into a new row of column A here blocks that spill range and
+  // breaks the sheet's whole product list. Instead, append the new name to
+  // Справочники!A (Справочник цен) and let the ARRAYFORMULA extend on its own.
+  const referencesSheet = ss.getSheetByName(SHEET_REFERENCES); // declared in Уведомления через ТГ-бот.js -- reused, not redeclared
+  const priceListLastRow = findLastNonEmptyRow_(referencesSheet, 1); // column A of Справочник цен
+  const newRow = priceListLastRow + 1; // Справочники and Склад товаров are row-for-row aligned starting at row 2 (ARRAYFORMULA(IF(...))) -- no independent scan of Склад товаров needed; an earlier attempt scanned Склад товаров's own column A for the last non-blank row and landed on its trailing "Итого" summary row instead of the spilled name, corrupting it
+  referencesSheet.getRange(newRow, 1).setValue(name); // A: Название товара -- triggers Склад товаров's ARRAYFORMULA to extend
+  SpreadsheetApp.flush();
+
+  // Defensive check: confirm the array formula actually spilled the name where expected before writing anything else there.
+  const spilledName = stockSheet.getRange(newRow, 1).getValue();
+  if (spilledName !== name) {
+    throw new Error('Ожидал "' + name + '" в Склад товаров!A' + newRow + ' после добавления в Справочники, но нашёл "' + spilledName + '" -- проверь структуру листов вручную, ничего больше не менялось.');
+  }
+
+  const stockLastCol = stockSheet.getLastColumn();
+  const stockHeader = stockSheet.getRange(1, 1, 1, stockLastCol).getValues()[0];
+  const stockTotalColIndex = stockHeader.indexOf('Итого') + 1; // 1-based; 0 if absent
+  const stockCopyWidth = stockTotalColIndex > 0 ? stockTotalColIndex - 1 : stockLastCol - 1; // through Итого inclusive (B..Итого), or to the sheet's last column if Итого is absent
+  stockSheet.getRange(2, 2, 1, stockCopyWidth).copyTo(stockSheet.getRange(newRow, 2, 1, stockCopyWidth)); // B..Итого: formulas
 }
 
 function findLastNonEmptyRow_(sheet, col) {

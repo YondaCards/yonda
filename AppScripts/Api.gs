@@ -50,7 +50,7 @@ function handleApiPost_(e) {
       return jsonResponse_(submitInventory(body.kind, body.location, body.counts, body.newItems, body.isSaleReconciliation, body.saleDate));
     }
     if (body.action === 'submitStockMovement') {
-      return jsonResponse_(submitStockMovement(body.movement, body.location, body.from, body.to, body.items));
+      return jsonResponse_(submitStockMovement(body.movement, body.location, body.from, body.to, body.items, body.newItems));
     }
     if (body.action === 'submitSale') {
       return jsonResponse_(submitSale(body.items, body.paymentType, body.totalOverride));

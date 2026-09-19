@@ -107,20 +107,53 @@
           '<div class="row-stock">Сейчас: ' + escapeHtml(String(item.current)) + '</div></div>' +
           '<input class="fact-input" type="number" inputmode="decimal" min="0" placeholder="—" data-qty="' + escapeAttr(item.name) + '" value="' + escapeAttr(q) + '"></div>';
       });
+      var addRow = '';
+      if (state.action === 'production') {
+        state.customItems.forEach(function (ci) {
+          rows += '<div class="row"><input class="name-input" type="text" placeholder="Название новой позиции" data-custom-name="' + ci.id + '" value="' + escapeAttr(ci.name) + '">' +
+            '<input class="fact-input" style="width:64px;" type="number" inputmode="decimal" min="0" placeholder="—" data-custom-fact="' + ci.id + '" value="' + escapeAttr(ci.fact) + '">' +
+            '<button class="remove-btn" data-remove-custom="' + ci.id + '">' + removeIcon() + '</button></div>';
+        });
+        addRow = '<button class="add-row-btn" id="add-custom">' + plusIcon() + ' Добавить позицию</button>';
+      }
       return '<div class="screen">' + header + '<div style="padding:8px 20px 0;font-size:13px;color:oklch(0.55 0.01 250);">' + ACTION_QTY_LABELS[state.action] + ' (количество):</div>' +
-        '<div class="list">' + rows + '</div>' +
+        '<div class="list">' + rows + addRow + '</div>' +
         '<div class="footer"><button class="primary-btn" id="save-move">Сохранить</button></div></div>';
     }
 
     function bindMoveItems() {
       document.getElementById('back-from-move').onclick = function () {
-        state.items = null; state.facts = {};
+        state.items = null; state.facts = {}; state.customItems = [];
         state.screen = state.action === 'transfer' ? 'transferpick' : 'location'; render();
       };
       if (state.items === null) return;
       document.querySelectorAll('[data-qty]').forEach(function (el) {
         el.onchange = function () { state.facts[el.getAttribute('data-qty')] = el.value; };
       });
+      document.querySelectorAll('[data-custom-name]').forEach(function (el) {
+        el.onchange = function () {
+          var id = el.getAttribute('data-custom-name');
+          state.customItems = state.customItems.map(function (c) { return c.id === id ? Object.assign({}, c, { name: el.value }) : c; });
+        };
+      });
+      document.querySelectorAll('[data-custom-fact]').forEach(function (el) {
+        el.onchange = function () {
+          var id = el.getAttribute('data-custom-fact');
+          state.customItems = state.customItems.map(function (c) { return c.id === id ? Object.assign({}, c, { fact: el.value }) : c; });
+        };
+      });
+      document.querySelectorAll('[data-remove-custom]').forEach(function (el) {
+        el.onclick = function () {
+          var id = el.getAttribute('data-remove-custom');
+          state.customItems = state.customItems.filter(function (c) { return c.id !== id; });
+          render();
+        };
+      });
+      var addBtn = document.getElementById('add-custom');
+      if (addBtn) addBtn.onclick = function () {
+        state.customItems.push({ id: 'c' + Date.now() + Math.floor(Math.random() * 1000), name: '', fact: '' });
+        render();
+      };
       document.getElementById('save-move').onclick = onSaveMovement;
     }
 
@@ -131,13 +164,17 @@
         if (raw === undefined || raw === '' || isNaN(Number(raw)) || Number(raw) <= 0) return;
         items.push({ name: item.name, quantity: raw });
       });
-      if (items.length === 0) { alert('Введите количество хотя бы для одного товара'); return; }
-      state.changes = items.map(function (i) { return { name: i.name, label: (state.action === 'writeoff' ? '−' : '+') + i.quantity }; });
+      var newItems = state.action !== 'production' ? [] : state.customItems
+        .filter(function (c) { return String(c.name).trim() && c.fact !== '' && !isNaN(Number(c.fact)) && Number(c.fact) > 0; })
+        .map(function (c) { return { name: String(c.name).trim(), quantity: c.fact }; });
+      if (items.length === 0 && newItems.length === 0) { alert('Введите количество хотя бы для одного товара'); return; }
+      state.changes = items.map(function (i) { return { name: i.name, label: (state.action === 'writeoff' ? '−' : '+') + i.quantity }; })
+        .concat(newItems.map(function (ni) { return { name: ni.name, label: '+' + ni.quantity + ' (новое)' }; }));
       var btn = document.getElementById('save-move');
       btn.setAttribute('disabled', 'true'); btn.textContent = 'Сохраняем…';
-      apiPost('submitStockMovement', { movement: state.action, location: state.location || '', from: state.from, to: state.to, items: items })
+      apiPost('submitStockMovement', { movement: state.action, location: state.location || '', from: state.from, to: state.to, items: items, newItems: newItems })
         .then(function (result) {
-          state.written = result && typeof result.written === 'number' ? result.written : items.length;
+          state.written = result && typeof result.written === 'number' ? result.written : items.length + newItems.length;
           state.screen = 'confirm'; render();
         })
         .catch(function (err) { btn.removeAttribute('disabled'); btn.textContent = 'Сохранить'; onError(err); });
